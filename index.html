@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Architect Pro: Page Selector & Pencil</title>
+    <title>Architect Pro: Precision Zoom</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         :root { --primary: #2563eb; --sidebar-width: 300px; }
         body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; background: #e5e7eb; }
         
-        /* サイドバー */
         #sidebar {
             width: var(--sidebar-width); background: #ffffff; border-right: 1px solid #d1d5db;
             padding: 15px; display: flex; flex-direction: column; gap: 15px; z-index: 100;
@@ -20,28 +19,23 @@
         select, input, button { padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; width: 100%; box-sizing: border-box; }
         button { background: var(--primary); color: white; cursor: pointer; border: none; font-weight: bold; }
 
-        /* ページナビ */
         .page-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #f3f4f6; padding: 8px; border-radius: 8px; }
         .page-nav button { width: 40px; padding: 5px; background: #6b7280; }
 
-        /* ペン設定 */
         .color-picker { display: flex; gap: 10px; margin-top: 5px; }
         .color-btn { width: 30px; height: 30px; border-radius: 50%; border: 2px solid white; cursor: pointer; box-shadow: 0 0 2px rgba(0,0,0,0.3); }
         .color-btn.active { outline: 2px solid var(--primary); }
 
-        /* 書き出し用ページリスト */
-        #page-list-container { max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 5px; border-radius: 6px; font-size: 12px; }
+        #page-list-container { max-height: 120px; overflow-y: auto; border: 1px solid #eee; padding: 5px; border-radius: 6px; font-size: 11px; }
         .page-item { display: flex; align-items: center; gap: 8px; padding: 4px; }
         .page-item input { width: auto; }
 
-        /* タブ */
         .tab-container { display: flex; gap: 2px; background: #f3f4f6; padding: 4px; border-radius: 10px; }
         .tab-button { flex: 1; padding: 8px 2px; background: transparent; color: #4b5563; font-size: 11px; border-radius: 6px; }
         .tab-button.active { background: white; color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 
-        /* ビューワー */
         #viewer-container { flex-grow: 1; position: relative; overflow: auto; background: #374151; -webkit-overflow-scrolling: touch; }
-        #canvas-wrapper { position: relative; transform-origin: 0 0; margin: 40px; }
+        #canvas-wrapper { position: relative; transform-origin: 0 0; margin: 40px; transition: transform 0.1s ease-out; }
         #pdf-canvas { position: absolute; top: 0; left: 0; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         #measure-canvas { position: absolute; top: 0; left: 0; touch-action: none; }
 
@@ -52,7 +46,7 @@
 <body>
 
 <div id="sidebar">
-    <h2 style="margin:0; font-size: 1.1rem; color: var(--primary);">Architect Pro</h2>
+    <h2 style="margin:0; font-size: 1.1rem; color: var(--primary);">Architect Pro v3</h2>
     
     <input type="file" id="file-input" accept="application/pdf">
 
@@ -72,7 +66,7 @@
         </select>
         <div style="display:flex; align-items:center; gap:5px;">
             <span style="font-size:12px;">1:</span>
-            <input type="number" id="scale-input" value="100">
+            <input type="number" id="scale-input" value="100" onchange="drawAll()">
         </div>
     </div>
 
@@ -105,13 +99,12 @@
 
     <div>
         <div class="section-title">出力ページ選択</div>
-        <div id="page-list-container">
-            </div>
+        <div id="page-list-container"></div>
     </div>
     
     <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
         <button onclick="exportToPDF()" style="background: #10b981;">📥 選択したページを保存</button>
-        <button onclick="resetPage()" style="background: #9ca3af; font-size: 11px;">このページを全削除</button>
+        <button onclick="resetPage()" style="background: #9ca3af; font-size: 11px;">このページをクリア</button>
     </div>
 </div>
 
@@ -127,11 +120,10 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
     let pdfDoc = null, currentPage = 1, totalPages = 0;
-    let currentScale = 1.0;
-    let measureMode = 'line';
-    let allPageData = {};
-
+    let currentScale = 1.0, prevW = null;
+    let measureMode = 'line', allPageData = {};
     let currentPenColor = '#000', currentPenWidth = 5;
+
     let isActive = false, startPoint = null, currentPoint = null, currentPath = null;
     let editingIndex = -1, editingEndPoint = null, editingType = null;
     let isNavigating = false, lastTouchMidX = 0, lastTouchMidY = 0;
@@ -144,7 +136,7 @@
     const pdfCtx = pdfCanvas.getContext('2d');
     const measureCtx = measureCanvas.getContext('2d');
 
-    // --- ファイル読み込み・ページ生成 ---
+    // --- ファイル読み込み ---
     document.getElementById('file-input').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -154,6 +146,7 @@
             totalPages = pdfDoc.numPages;
             currentPage = 1;
             allPageData = {};
+            prevW = null; // リセット
             createPageList();
             renderPage();
         };
@@ -166,7 +159,7 @@
         for (let i = 1; i <= totalPages; i++) {
             const div = document.createElement('div');
             div.className = 'page-item';
-            div.innerHTML = `<input type="checkbox" id="page-chk-${i}" checked> <label for="page-chk-${i}">P.${i} を出力に含める</label>`;
+            div.innerHTML = `<input type="checkbox" id="page-chk-${i}" checked> <label for="page-chk-${i}">P.${i} を出力</label>`;
             container.appendChild(div);
         }
     }
@@ -180,11 +173,25 @@
         if (!pdfDoc) return;
         const page = await pdfDoc.getPage(currentPage);
         const viewport = page.getViewport({ scale: currentScale });
+
+        // 【最重要】ズーム追従：前の幅との比率で全データの座標を更新
+        if (prevW !== null && prevW !== viewport.width) {
+            const ratio = viewport.width / prevW;
+            Object.values(allPageData).forEach(data => {
+                const sc = (p) => { p.x *= ratio; p.y *= ratio; };
+                data.measurements.forEach(m => { sc(m.p1); sc(m.p2); });
+                data.areaPolygons.forEach(a => { sc(a.p1); sc(a.p2); });
+                data.freehandPaths.forEach(path => path.points.forEach(sc));
+            });
+        }
+        prevW = viewport.width;
+
         pdfCanvas.width = measureCanvas.width = viewport.width;
         pdfCanvas.height = measureCanvas.height = viewport.height;
         wrapper.style.width = viewport.width + "px";
         wrapper.style.height = viewport.height + "px";
         document.getElementById('page-info').innerText = `${currentPage} / ${totalPages}`;
+        
         await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
         drawAll();
     }
@@ -194,36 +201,29 @@
         if (next >= 1 && next <= totalPages) { currentPage = next; renderPage(); }
     }
 
-    // --- ペン設定 ---
-    function setPenColor(color, el) {
-        currentPenColor = color;
-        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
-        el.classList.add('active');
-    }
-
-    function switchMode(mode) {
-        measureMode = mode;
-        document.querySelectorAll('.tab-button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-        document.getElementById('pen-controls').style.opacity = (mode === 'pen' || mode === 'line' || mode === 'area') ? '1' : '0.3';
-    }
-
-    // --- ポインター制御 (iPad Pencil vs Finger) ---
+    // --- Pencil vs Touch ロジック ---
     function getPos(e) {
         const rect = measureCanvas.getBoundingClientRect();
-        return { x: (e.clientX - rect.left) / (rect.width / measureCanvas.width), y: (e.clientY - rect.top) / (rect.height / measureCanvas.height) };
+        const zoom = rect.width / measureCanvas.width; // CSS transform考慮
+        return { 
+            x: (e.clientX - rect.left) / zoom, 
+            y: (e.clientY - rect.top) / zoom 
+        };
     }
 
     function onPointerDown(e) {
         if (e.pointerType === 'touch' && e.isPrimary === false) return;
         const p = getPos(e);
+        
         if (e.pointerType === 'pen' || (e.pointerType === 'mouse' && e.button === 0)) {
             isNavigating = false; isActive = true;
             const data = getPageData(currentPage);
             editingIndex = -1;
+            const threshold = 30 / (window.devicePixelRatio || 1);
             const check = (list, type) => {
                 list.forEach((it, i) => {
-                    if (Math.hypot(p.x-it.p1.x, p.y-it.p1.y) < 25) { editingIndex = i; editingEndPoint = 'p1'; editingType = type; }
-                    else if (Math.hypot(p.x-it.p2.x, p.y-it.p2.y) < 25) { editingIndex = i; editingEndPoint = 'p2'; editingType = type; }
+                    if (Math.hypot(p.x-it.p1.x, p.y-it.p1.y) < threshold) { editingIndex = i; editingEndPoint = 'p1'; editingType = type; }
+                    else if (Math.hypot(p.x-it.p2.x, p.y-it.p2.y) < threshold) { editingIndex = i; editingEndPoint = 'p2'; editingType = type; }
                 });
             };
             check(data.measurements, 'line');
@@ -270,19 +270,42 @@
         isNavigating = false;
     }
 
-    // ピンチズーム
-    viewer.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { initialPinchDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); initialScale = currentScale; } }, {passive: false});
-    viewer.addEventListener('touchmove', (e) => { if (e.touches.length === 2) { e.preventDefault(); const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); wrapper.style.transform = `scale(${dist / initialPinchDist})`; } }, {passive: false});
-    viewer.addEventListener('touchend', () => { if (wrapper.style.transform !== "") { const rect = wrapper.getBoundingClientRect(); currentScale = (rect.width / (pdfCanvas.width / currentScale)); wrapper.style.transform = ""; renderPage(); } });
+    // --- ピンチズーム対応 ---
+    viewer.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            initialPinchDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            initialScale = currentScale;
+        }
+    }, {passive: false});
+
+    viewer.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            const scaleRatio = dist / initialPinchDist;
+            wrapper.style.transform = `scale(${scaleRatio})`;
+        }
+    }, {passive: false});
+
+    viewer.addEventListener('touchend', (e) => {
+        if (wrapper.style.transform !== "") {
+            const rect = wrapper.getBoundingClientRect();
+            // 現在の表示幅から論理的な新スケールを算出
+            currentScale = (rect.width / (pdfCanvas.width / currentScale));
+            wrapper.style.transform = ""; // Transformを解除してCanvasを再描画
+            renderPage();
+        }
+    });
 
     measureCanvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
 
-    // --- 描画・計算 ---
+    // --- 描画・計算ロジック ---
     function drawAll() {
         measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
         const data = getPageData(currentPage);
+        
         [...data.freehandPaths, currentPath].forEach(p => {
             if (!p || p.points.length < 2) return;
             measureCtx.beginPath(); measureCtx.strokeStyle = p.color; measureCtx.lineWidth = p.width;
@@ -290,8 +313,10 @@
             measureCtx.moveTo(p.points[0].x, p.points[0].y);
             p.points.forEach(pt => measureCtx.lineTo(pt.x, pt.y)); measureCtx.stroke();
         });
+
         data.measurements.forEach(m => drawLine(m.p1, m.p2, 'red'));
         if (measureMode === 'line' && startPoint && currentPoint && editingIndex===-1) drawLine(startPoint, currentPoint, '#ff7f00', true);
+        
         data.areaPolygons.forEach(a => drawArea(a.p1, a.p2, 'rgba(255,0,0,0.1)'));
         if (measureMode === 'area' && startPoint && currentPoint && editingIndex===-1) drawArea(startPoint, currentPoint, 'rgba(255,165,0,0.2)');
     }
@@ -302,7 +327,7 @@
         measureCtx.moveTo(p1.x, p1.y); measureCtx.lineTo(p2.x, p2.y); measureCtx.stroke();
         measureCtx.setLineDash([]);
         [p1, p2].forEach(p => { measureCtx.fillStyle = color; measureCtx.beginPath(); measureCtx.arc(p.x, p.y, 6, 0, Math.PI*2); measureCtx.fill(); });
-        measureCtx.fillStyle = 'blue'; measureCtx.font = 'bold 16px sans-serif';
+        measureCtx.fillStyle = 'blue'; measureCtx.font = `bold ${Math.max(14, 14 * currentScale)}px sans-serif`;
         measureCtx.fillText(`${calcDist(p1, p2)}mm`, (p1.x+p2.x)/2, (p1.y+p2.y)/2);
     }
 
@@ -310,7 +335,7 @@
         const x = Math.min(p1.x, p2.x), y = Math.min(p1.y, p2.y), w = Math.abs(p2.x-p1.x), h = Math.abs(p2.y-p1.y);
         measureCtx.fillStyle = fill; measureCtx.fillRect(x, y, w, h);
         measureCtx.strokeStyle = 'red'; measureCtx.strokeRect(x, y, w, h);
-        measureCtx.fillStyle = 'blue'; measureCtx.font = 'bold 18px sans-serif';
+        measureCtx.fillStyle = 'blue'; measureCtx.font = `bold ${Math.max(16, 16 * currentScale)}px sans-serif`;
         measureCtx.textAlign = "center"; measureCtx.fillText(`${calcArea({p1,p2})}m²`, x+w/2, y+h/2); measureCtx.textAlign = "left";
     }
 
@@ -318,6 +343,7 @@
         const px = Math.hypot(p1.x-p2.x, p1.y-p2.y);
         const pw = parseFloat(document.getElementById('paper-size').selectedOptions[0].dataset.w);
         const sc = parseFloat(document.getElementById('scale-input').value) || 100;
+        // ピクセル数 / 現在のスケール = ベースサイズでのピクセル
         return Math.round((px / currentScale) * (pw / (pdfCanvas.width / currentScale)) * sc);
     }
 
@@ -334,6 +360,17 @@
         data.freehandPaths = data.freehandPaths.filter(path => !path.points.some(pt => Math.hypot(pt.x-p.x, pt.y-p.y) < 20));
     }
 
+    function setPenColor(color, el) {
+        currentPenColor = color;
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function switchMode(mode) {
+        measureMode = mode;
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    }
+
     function updateResultText() {
         const data = getPageData(currentPage);
         const res = document.getElementById('measure-result');
@@ -342,14 +379,14 @@
 
     function resetPage() { if(confirm("クリアしますか？")) { allPageData[currentPage] = null; drawAll(); } }
 
-    // --- ページ選択書き出し ---
+    // --- PDF書き出し ---
     async function exportToPDF() {
         if (!pdfDoc) return;
         const selectedPages = [];
         for (let i = 1; i <= totalPages; i++) {
             if (document.getElementById(`page-chk-${i}`).checked) selectedPages.push(i);
         }
-        if (selectedPages.length === 0) { alert("出力するページを1つ以上選択してください。"); return; }
+        if (selectedPages.length === 0) return alert("ページを選択してください。");
 
         const name = prompt("保存名", "survey_result");
         if (!name) return;
@@ -366,19 +403,21 @@
             await page.render({ canvasContext: ctx, viewport: v }).promise;
 
             const data = getPageData(num);
-            const s = 2.0 / currentScale;
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            const s = 2.0 / currentScale; // 出力スケール(2.0)への倍率
+
             data.freehandPaths.forEach(p => {
                 ctx.beginPath(); ctx.strokeStyle = p.color; ctx.lineWidth = p.width * s;
                 ctx.moveTo(p.points[0].x*s, p.points[0].y*s);
                 p.points.forEach(pt => ctx.lineTo(pt.x*s, pt.y*s)); ctx.stroke();
             });
+
             ctx.font = `bold ${14*s}px sans-serif`;
             data.measurements.forEach(m => {
                 ctx.strokeStyle = 'red'; ctx.lineWidth = 2*s;
                 ctx.beginPath(); ctx.moveTo(m.p1.x*s, m.p1.y*s); ctx.lineTo(m.p2.x*s, m.p2.y*s); ctx.stroke();
                 ctx.fillStyle = 'blue'; ctx.fillText(`${calcDist(m.p1, m.p2)}mm`, ((m.p1.x+m.p2.x)/2)*s, ((m.p1.y+m.p2.y)/2)*s);
             });
+
             data.areaPolygons.forEach(a => {
                 const x = Math.min(a.p1.x, a.p2.x)*s, y = Math.min(a.p1.y, a.p2.y)*s;
                 const w = Math.abs(a.p2.x-a.p1.x)*s, h = Math.abs(a.p2.y-a.p1.y)*s;
