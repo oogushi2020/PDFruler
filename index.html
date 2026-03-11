@@ -3,108 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Drawing Measure Tool</title>
+    <title>PDF Measurement & Drawing Tool</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        :root {
-            --primary: #2563eb;
-            --sidebar-width: 300px;
-        }
+        :root { --primary: #2563eb; --sidebar-width: 300px; }
         body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; background: #f3f4f6; }
         
-        /* Sidebar Styles */
         #sidebar {
-            width: var(--sidebar-width);
-            background: white;
-            border-right: 1px solid #e5e7eb;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            z-index: 10;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            width: var(--sidebar-width); background: white; border-right: 1px solid #e5e7eb;
+            padding: 20px; display: flex; flex-direction: column; gap: 15px; z-index: 10;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05); overflow-y: auto;
         }
-        .control-group { display: flex; flex-direction: column; gap: 8px; }
-        label { font-size: 12px; font-weight: bold; color: #4b5563; }
-        select, input, button { padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 11px; font-weight: bold; color: #4b5563; }
+        select, input, button { padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; }
         button { background: var(--primary); color: white; cursor: pointer; border: none; font-weight: bold; }
         button:hover { opacity: 0.9; }
 
-        /* Viewer Styles */
-        #viewer-container {
-            flex-grow: 1;
-            position: relative;
-            overflow: auto;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            background: #525659;
+        .tab-container { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 2px solid #d1d5db; }
+        .tab-button {
+            flex: 1; padding: 8px 2px; background: #f3f4f6; border: none; cursor: pointer;
+            font-weight: bold; color: #4b5563; font-size: 11px; border-bottom: 3px solid transparent;
         }
-        #canvas-wrapper {
-            position: relative;
-            margin: 20px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.3);
-        }
+        .tab-button.active { background: white; color: var(--primary); border-bottom-color: var(--primary); }
+
+        #pen-settings { display: none; padding: 10px; background: #f0f7ff; border-radius: 5px; border: 1px solid #c3dafe; }
+        .color-picker { display: flex; gap: 10px; margin: 5px 0; }
+        .color-btn { width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; cursor: pointer; box-shadow: 0 0 3px rgba(0,0,0,0.2); }
+        .color-btn.active { outline: 2px solid var(--primary); }
+
+        #viewer-container { flex-grow: 1; position: relative; overflow: auto; display: flex; justify-content: center; background: #525659; }
+        #canvas-wrapper { position: relative; margin: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.3); }
         #pdf-canvas { position: absolute; top: 0; left: 0; }
         #measure-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none; }
 
-        .info-panel {
-            margin-top: auto;
-            padding: 15px;
-            background: #f9fafb;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-        .result-value { font-size: 20px; font-weight: bold; color: var(--primary); }
-        
-        /* Tab Styles */
-        .tab-container { display: flex; gap: 0; border-bottom: 2px solid #d1d5db; margin-bottom: 10px; }
-        .tab-button { 
-            padding: 8px 16px; 
-            background: #f3f4f6; 
-            border: none; 
-            cursor: pointer; 
-            font-weight: bold;
-            color: #4b5563;
-            font-size: 12px;
-            border-bottom: 3px solid transparent;
-        }
-        .tab-button.active { 
-            background: white; 
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-        .tab-button:hover { background: white; }
+        .info-panel { padding: 10px; background: #f9fafb; border-radius: 8px; font-size: 12px; }
+        .result-value { font-size: 18px; font-weight: bold; color: var(--primary); }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
-    <h2>📏 PDF図面計測</h2>
+    <h2 style="margin:0; font-size: 1.1rem;">📏 PDF図面ツール</h2>
     
     <div class="control-group">
-        <label>① PDFを読み込む</label>
+        <label>① PDF読み込み</label>
         <input type="file" id="file-input" accept="application/pdf">
     </div>
 
     <div class="control-group">
-        <label>② 用紙サイズ</label>
+        <label>② 用紙 / 縮尺</label>
         <select id="paper-size">
-            <option value="A4" data-w="297" data-h="210">A4 (297 x 210mm)</option>
-            <option value="A3" data-w="420" data-h="297" selected>A3 (420 x 297mm)</option>
-            <option value="A2" data-w="594" data-h="420">A2 (594 x 420mm)</option>
-            <option value="A1" data-w="841" data-h="594">A1 (841 x 594mm)</option>
+            <option value="A4" data-w="297" data-h="210">A4 (297x210mm)</option>
+            <option value="A3" data-w="420" data-h="297" selected>A3 (420x297mm)</option>
+            <option value="A2" data-w="594" data-h="420">A2 (594x420mm)</option>
         </select>
-    </div>
-
-    <div class="control-group">
-        <label>③ 図面縮尺 (1 : X)</label>
         <select id="scale-factor">
-            <option value="5">1:5</option>
-            <option value="10">1:10</option>
-            <option value="20">1:20</option>
             <option value="50">1:50</option>
             <option value="100" selected>1:100</option>
             <option value="200">1:200</option>
@@ -113,36 +68,45 @@
     </div>
 
     <div class="control-group">
-        <label>表示倍率</label>
+        <label>ズーム: <span id="zoom-val">150%</span></label>
         <input type="range" id="zoom-range" min="0.5" max="3" step="0.1" value="1.5">
-        <span id="zoom-val">150%</span>
     </div>
 
     <div class="tab-container">
         <button class="tab-button active" data-mode="line" onclick="switchMode('line')">線測定</button>
         <button class="tab-button" data-mode="area" onclick="switchMode('area')">面積測定</button>
+        <button class="tab-button" data-mode="pen" onclick="switchMode('pen')">ペン</button>
+        <button class="tab-button" data-mode="eraser" onclick="switchMode('eraser')">消しゴム</button>
+    </div>
+
+    <div id="pen-settings">
+        <label>ペン色:</label>
+        <div class="color-picker">
+            <div class="color-btn active" style="background: #000000;" onclick="setPenStyle('#000000', this)"></div>
+            <div class="color-btn" style="background: #ff0000;" onclick="setPenStyle('#ff0000', this)"></div>
+            <div class="color-btn" style="background: #0000ff;" onclick="setPenStyle('#0000ff', this)"></div>
+        </div>
+        <label>太さ:</label>
+        <select id="pen-width" onchange="currentPenWidth = parseInt(this.value)">
+            <option value="2">細</option>
+            <option value="5" selected>中</option>
+            <option value="10">太</option>
+        </select>
     </div>
 
     <div class="info-panel">
-        <div id="result-label">測定結果:</div>
-        <div class="result-value" id="measure-result">--- </div>
-        <div style="font-size: 11px; margin-top: 5px; color: #666;">
-            ※線粗: クリック→ドラッグ<br>
-            ※面積: 【始点】【対角点】で確定<br>
-            ※端点スナップ有効 (15px以内)<br>
-            ※角度スナップ有効（15度単位）<br>
-            ※iPad対応
-        </div>
+        <div id="result-label">最新の測定:</div>
+        <div class="result-value" id="measure-result">---</div>
     </div>
 
-    <div id="measurement-list" class="info-panel">
-        <div style="font-size: 12px; font-weight: bold; margin-bottom: 8px; color: #2563eb;">計測済み（全数値）:</div>
-        <div id="measurement-items" style="max-height: 150px; overflow-y: auto; font-size: 11px;"></div>
+    <div id="measurement-list" class="info-panel" style="max-height: 150px; overflow-y: auto;">
+        <div style="font-weight: bold; margin-bottom: 5px; color: var(--primary);">履歴:</div>
+        <div id="measurement-items"></div>
     </div>
     
-    <div style="display: flex; flex-direction: column; gap: 8px;">
-        <button onclick="resetMeasurement()">計測をクリア</button>
-        <button onclick="exportToPDF()" style="background: #16a34a;">📥 PDFで保存</button>
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+        <button onclick="resetAll()" style="background: #9ca3af;">計測クリア</button>
+        <button onclick="exportToPDF()" style="background: #16a34a;">📥 名前をつけてPDF保存</button>
     </div>
 </div>
 
@@ -157,1145 +121,318 @@
     const pdfjsLib = window['pdfjs-dist/build/pdf'];
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    let pdfDoc = null;
-    let pageNum = 1;
-    let currentScale = 1.5;
-    let measureMode = 'line'; // 'line' または 'area'
-    let previousViewportWidth = null; // 前回のViewport幅
-    let previousViewportHeight = null; // 前回のViewport高さ
-    let measurements = []; // 線測定の履歴
-    let areaPolygons = []; // 完成した面積四角形配列
-    let currentAreaVertices = []; // 現在描画中の面積用禹点
-    let isDrawing = false;
-    let startPoint = null;
-    let currentPoint = null;
-    let editingIndex = -1; // 編集中の測定インデックス（線測定用）
-    let editingEndPoint = null; // 編集中の終点（'p1' または 'p2'）
-    let fixedPoint = null; // 編集中の固定点
-    let editingVertexIndex = -1; // 編集中の頂点インデックス（面積測定用）
-    let editingPolygonIndex = -1; // 編集中のポリゴンインデックス
+    let pdfDoc = null, pageNum = 1, currentScale = 1.5;
+    let measureMode = 'line', prevW = null, prevH = null;
+
+    // データ
+    let measurements = [];   // 線
+    let areaPolygons = [];   // 面積
+    let freehandPaths = [];  // ペン
+
+    // 編集・描画状態
+    let isDrawing = false, startPoint = null, currentPoint = null;
+    let editingIndex = -1, editingEndPoint = null, editingType = null; 
+    let currentPath = null;
+    let currentPenColor = '#000000', currentPenWidth = 5;
 
     const pdfCanvas = document.getElementById('pdf-canvas');
     const measureCanvas = document.getElementById('measure-canvas');
     const pdfCtx = pdfCanvas.getContext('2d');
     const measureCtx = measureCanvas.getContext('2d');
 
-    // 測定モード切り替え
     function switchMode(mode) {
         measureMode = mode;
-        // 現在の描画を完了
-        if (currentAreaVertices.length > 0) {
-            if (currentAreaVertices.length >= 2) {
-                areaPolygons.push({
-                    p1: currentAreaVertices[0],
-                    p2: currentAreaVertices[1]
-                });
-            }
-            currentAreaVertices = [];
-        }
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+        document.getElementById('pen-settings').style.display = (mode === 'pen') ? 'block' : 'none';
         isDrawing = false;
-        startPoint = null;
-        currentPoint = null;
-        editingIndex = -1;
-        editingVertexIndex = -1;
-        editingPolygonIndex = -1;
-        
-        // タブUIの更新
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.dataset.mode === mode) {
-                btn.classList.add('active');
-            }
-        });
-        
-        // 結果表示を更新
-        const resultLabel = document.getElementById('result-label');
-        if (measureMode === 'area') {
-            resultLabel.innerText = '計算結果:';
-        } else {
-            resultLabel.innerText = '測定結果:';
-        }
-        
-        updateMeasurementList();
-        drawAllMeasurements();
+        drawAll();
     }
 
-    // PDF 読み込み
+    function setPenStyle(color, el) {
+        currentPenColor = color;
+        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    // PDF読み込み
     document.getElementById('file-input').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async function() {
-            const typedarray = new Uint8Array(this.result);
-            pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
-            renderPage(pageNum);
+            pdfDoc = await pdfjsLib.getDocument(new Uint8Array(this.result)).promise;
+            renderPage();
         };
         reader.readAsArrayBuffer(file);
     });
 
-    // ズーム変更
+    // ズーム
     document.getElementById('zoom-range').addEventListener('input', (e) => {
         currentScale = parseFloat(e.target.value);
         document.getElementById('zoom-val').innerText = `${Math.round(currentScale*100)}%`;
-        if (pdfDoc) renderPage(pageNum);
+        if (pdfDoc) renderPage();
     });
 
-    async function renderPage(num) {
-        const page = await pdfDoc.getPage(num);
+    async function renderPage() {
+        const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale: currentScale });
-        
-        // ズーム時に測定データの座標をスケーリング
-        if (previousViewportWidth !== null && previousViewportHeight !== null) {
-            const scaleX = viewport.width / previousViewportWidth;
-            const scaleY = viewport.height / previousViewportHeight;
-            
-            // エラーチェック
-            if (!isFinite(scaleX) || !isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
-                console.error('Invalid scale factors:', scaleX, scaleY);
-                previousViewportWidth = viewport.width;
-                previousViewportHeight = viewport.height;
-                pdfCanvas.height = viewport.height;
-                pdfCanvas.width = viewport.width;
-                measureCanvas.height = viewport.height;
-                measureCanvas.width = viewport.width;
-                const renderContext = { canvasContext: pdfCtx, viewport: viewport };
-                await page.render(renderContext).promise;
-                updateMeasurementList();
-                drawAllMeasurements();
-                return;
-            }
-            
-            // 線測定の座標をスケーリング（整数に丸める）
-            measurements.forEach(m => {
-                m.p1.x = Math.round(m.p1.x * scaleX);
-                m.p1.y = Math.round(m.p1.y * scaleY);
-                m.p2.x = Math.round(m.p2.x * scaleX);
-                m.p2.y = Math.round(m.p2.y * scaleY);
-            });
-            
-            // 面積測定の座標をスケーリング（整数に丸める）
-            areaPolygons.forEach(rect => {
-                rect.p1.x = Math.round(rect.p1.x * scaleX);
-                rect.p1.y = Math.round(rect.p1.y * scaleY);
-                rect.p2.x = Math.round(rect.p2.x * scaleX);
-                rect.p2.y = Math.round(rect.p2.y * scaleY);
-            });
-            
-            // 現在の面積頂点もスケーリング（整数に丸める）
-            currentAreaVertices.forEach(v => {
-                v.x = Math.round(v.x * scaleX);
-                v.y = Math.round(v.y * scaleY);
-            });
-        }
-        
-        // 前回のViewportサイズを記憶
-        previousViewportWidth = viewport.width;
-        previousViewportHeight = viewport.height;
-        
-        pdfCanvas.height = viewport.height;
-        pdfCanvas.width = viewport.width;
-        measureCanvas.height = viewport.height;
-        measureCanvas.width = viewport.width;
 
-        const renderContext = { canvasContext: pdfCtx, viewport: viewport };
-        await page.render(renderContext).promise;
-        
-        updateMeasurementList();
-        drawAllMeasurements();
+        if (prevW !== null) {
+            const sx = viewport.width / prevW, sy = viewport.height / prevH;
+            measurements.forEach(m => { m.p1.x*=sx; m.p1.y*=sy; m.p2.x*=sx; m.p2.y*=sy; });
+            areaPolygons.forEach(a => { a.p1.x*=sx; a.p1.y*=sy; a.p2.x*=sx; a.p2.y*=sy; });
+            freehandPaths.forEach(path => path.points.forEach(p => { p.x*=sx; p.y*=sy; }));
+        }
+
+        prevW = viewport.width; prevH = viewport.height;
+        pdfCanvas.width = measureCanvas.width = viewport.width;
+        pdfCanvas.height = measureCanvas.height = viewport.height;
+
+        await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
+        drawAll();
+        updateList();
     }
 
-    // 角度スナップ：最も近い15度単位の角度にスナップ
-    function snapToAngle(p1, p2) {
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        
-        // 最も近い15度単位にスナップ
-        const snapAngles = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345];
-        angle = (angle + 360) % 360;
-        
-        let closestAngle = snapAngles[0];
-        let minDiff = 360;
-        for (let sa of snapAngles) {
-            let diff = Math.abs(angle - sa);
-            if (diff > 180) diff = 360 - diff;
-            if (diff < minDiff) {
-                minDiff = diff;
-                closestAngle = sa;
-            }
-        }
-        
-        // 7度以内ならスナップ
-        if (minDiff < 7) {
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            const newAngle = closestAngle * Math.PI / 180;
-            return {
-                x: p1.x + Math.cos(newAngle) * dist,
-                y: p1.y + Math.sin(newAngle) * dist
-            };
-        }
-        return p2;
-    }
-
-    // クライアント座標を取得（マウス、タッチ対応）
-    function getClientCoordinates(e) {
+    function getPos(e) {
         const rect = measureCanvas.getBoundingClientRect();
-        let clientX, clientY;
-        
-        if (e.touches && e.touches.length > 0) {
-            // タッチいべんと（iOS、iPad）
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
-        } else if (e.changedTouches && e.changedTouches.length > 0) {
-            // touchendではtouchesが空なのでchangedTouchesを使用
-            clientX = e.changedTouches[0].clientX;
-            clientY = e.changedTouches[0].clientY;
-        } else {
-            // マウスいべんと
-            clientX = e.clientX;
-            clientY = e.clientY;
-        }
-        
-        return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
-        };
+        const cx = e.touches ? e.touches[0].clientX : e.clientX;
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: cx - rect.left, y: cy - rect.top };
     }
 
-    // 線の端点に近いかどうか判定（閾値10px）
-    function isNearEndPoint(x, y, point, threshold = 10) {
-        const dist = Math.hypot(x - point.x, y - point.y);
-        return dist < threshold;
+    function isNear(p1, p2, dist = 12) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y) < dist;
     }
 
-    // 掴作開始（マウス/タッチ両対応、線と面積両方対応）
-    function handlePointerDown(e) {
-        // iPad：1指以上の場合は処理を継続
-        if (e.touches && e.touches.length > 1) {
-            // 2指以上の場合はscrollを許容
-            return;
-        }
+    // 操作開始
+    function handleDown(e) {
+        if (e.touches && e.touches.length > 1) return;
+        const p = getPos(e);
         
-        e.preventDefault();
-        const coords = getClientCoordinates(e);
-
-        // 既存の測定線の端点をクリックしたか確認
-        for (let i = 0; i < measurements.length; i++) {
-            if (isNearEndPoint(coords.x, coords.y, measurements[i].p1, 10)) {
-                editingIndex = i;
-                editingEndPoint = 'p1';
-                fixedPoint = measurements[i].p2;
-                startPoint = fixedPoint;
-                isDrawing = true;
-                return;
-            }
-            if (isNearEndPoint(coords.x, coords.y, measurements[i].p2, 10)) {
-                editingIndex = i;
-                editingEndPoint = 'p2';
-                fixedPoint = measurements[i].p1;
-                startPoint = fixedPoint;
-                isDrawing = true;
-                return;
-            }
-        }
-
-        // 既存四角形の頂点をクリックしたか確認
-        for (let pIdx = 0; pIdx < areaPolygons.length; pIdx++) {
-            const rect = areaPolygons[pIdx];
-            if (isNearEndPoint(coords.x, coords.y, rect.p1, 10)) {
-                editingPolygonIndex = pIdx;
-                editingVertexIndex = 0;
-                isDrawing = true;
-                return;
-            }
-            if (isNearEndPoint(coords.x, coords.y, rect.p2, 10)) {
-                editingPolygonIndex = pIdx;
-                editingVertexIndex = 1;
-                isDrawing = true;
-                return;
-            }
-        }
-
-        // 現在の面積頂点を編集中かチェック
-        if (currentAreaVertices.length > 0) {
-            if (isNearEndPoint(coords.x, coords.y, currentAreaVertices[0], 10)) {
-                editingVertexIndex = 0;
-                isDrawing = true;
-                return;
-            }
-            if (currentAreaVertices.length > 1 && isNearEndPoint(coords.x, coords.y, currentAreaVertices[1], 10)) {
-                editingVertexIndex = 1;
-                isDrawing = true;
-                return;
-            }
-        }
-
-        // 新規測定開始
+        // 1. 既存ポイントのヒットテスト（編集モード）
         editingIndex = -1;
-        editingEndPoint = null;
-        fixedPoint = null;
+        editingType = null;
 
-        if (measureMode === 'line') {
-            // 線測定：クリックでstartPointを設定、ドラッグ中に測定
-            startPoint = { x: coords.x, y: coords.y };
+        // 線測定の端点チェック
+        for (let i = 0; i < measurements.length; i++) {
+            if (isNear(p, measurements[i].p1)) { editingIndex = i; editingEndPoint = 'p1'; editingType = 'line'; break; }
+            if (isNear(p, measurements[i].p2)) { editingIndex = i; editingEndPoint = 'p2'; editingType = 'line'; break; }
+        }
+
+        // 面積測定の端点チェック
+        if (editingIndex === -1) {
+            for (let i = 0; i < areaPolygons.length; i++) {
+                if (isNear(p, areaPolygons[i].p1)) { editingIndex = i; editingEndPoint = 'p1'; editingType = 'area'; break; }
+                if (isNear(p, areaPolygons[i].p2)) { editingIndex = i; editingEndPoint = 'p2'; editingType = 'area'; break; }
+            }
+        }
+
+        if (editingIndex !== -1) {
             isDrawing = true;
-        } else if (measureMode === 'area') {
-            // 面積測定：面積頂点を追加
-            if (currentAreaVertices.length === 0) {
-                currentAreaVertices.push({ x: coords.x, y: coords.y });
-                startPoint = null;
-                isDrawing = false;
-            } else if (currentAreaVertices.length === 1) {
-                currentAreaVertices.push({ x: coords.x, y: coords.y });
-                areaPolygons.push({
-                    p1: currentAreaVertices[0],
-                    p2: currentAreaVertices[1]
-                });
-                currentAreaVertices = [];
-                startPoint = null;
-                isDrawing = false;
-                updateMeasurementList();
-            } else {
-                // 次の矩形測定開始
-                currentAreaVertices = [{ x: coords.x, y: coords.y }];
-                startPoint = null;
-                isDrawing = false;
-            }
-        }
-        
-        drawAllMeasurements();
-    }
-
-    measureCanvas.addEventListener('mousedown', handlePointerDown);
-    measureCanvas.addEventListener('touchstart', handlePointerDown);
-
-    // ポインタ移動（マウス/タッチ両対応）
-    function handlePointerMove(e) {
-        if (!isDrawing || !startPoint) return;
-        
-        // iPad：2指以上の場合は処理を継続
-        if (e.touches && e.touches.length > 1) {
             return;
         }
-        
-        e.preventDefault();
 
-        const coords = getClientCoordinates(e);
-
-        if (measureMode === 'line') {
-            handleLinePointerMove(coords);
-        } else if (measureMode === 'area') {
-            handleAreaPointerMove(coords);
-        }
-    }
-
-    function handleLinePointerMove(coords) {
-        let snapPoint = { x: coords.x, y: coords.y };
-        
-        // 端点スナップ：既存の線の端点に近いかをチェック
-        let isSnapped = false;
-        const endPointThreshold = 15; // スナップ範囲
-        
-        for (let i = 0; i < measurements.length; i++) {
-            // 編集中の線自体はスキップ
-            if (i === editingIndex) continue;
-            
-            const dist1 = Math.hypot(coords.x - measurements[i].p1.x, coords.y - measurements[i].p1.y);
-            const dist2 = Math.hypot(coords.x - measurements[i].p2.x, coords.y - measurements[i].p2.y);
-            
-            if (dist1 < endPointThreshold) {
-                snapPoint = { x: measurements[i].p1.x, y: measurements[i].p1.y };
-                isSnapped = true;
-                break;
-            } else if (dist2 < endPointThreshold) {
-                snapPoint = { x: measurements[i].p2.x, y: measurements[i].p2.y };
-                isSnapped = true;
-                break;
-            }
-        }
-        
-        // 端点スナップが有効でない場合、角度スナップを適用
-        currentPoint = isSnapped ? snapPoint : snapToAngle(startPoint, snapPoint);
-        currentPoint.isSnapped = isSnapped;
-        drawAllMeasurements();
-    }
-
-    function handleAreaPointerMove(coords) {
-        if (editingVertexIndex >= 0) {
-            // 頂点編集中
-            let snapPoint = { x: coords.x, y: coords.y };
-            let isSnapped = false;
-            const endPointThreshold = 15;
-
-            if (editingPolygonIndex >= 0) {
-                // 完成した四角形を編集中
-                const rect = areaPolygons[editingPolygonIndex];
-                
-                if (editingVertexIndex === 0) {
-                    // p1を編集
-                    snapPoint = isSnapped ? snapPoint : snapToAngle(rect.p1, snapPoint);
-                    rect.p1 = snapPoint;
-                } else {
-                    // p2を編集
-                    snapPoint = isSnapped ? snapPoint : snapToAngle(rect.p2, snapPoint);
-                    rect.p2 = snapPoint;
-                }
-            } else {
-                // 現在の頂点を編集中
-                if (editingVertexIndex === 0) {
-                    snapPoint = isSnapped ? snapPoint : snapToAngle(currentAreaVertices[0], snapPoint);
-                    currentAreaVertices[0] = snapPoint;
-                } else if (editingVertexIndex === 1) {
-                    snapPoint = isSnapped ? snapPoint : snapToAngle(currentAreaVertices[1], snapPoint);
-                    currentAreaVertices[1] = snapPoint;
-                }
-            }
-            drawAllMeasurements();
-        }
-    }
-
-    measureCanvas.addEventListener('mousemove', handlePointerMove);
-    measureCanvas.addEventListener('touchmove', handlePointerMove);
-
-    // ポインタ拆離（マウス/タッチ両対応）
-    function handlePointerUp(e) {
-        if (measureMode === 'line') {
-            handleLinePointerUp(e);
-        } else if (measureMode === 'area') {
-            handleAreaPointerUp(e);
-        }
-    }
-
-    function handleLinePointerUp(e) {
-        if (!isDrawing || !startPoint || !currentPoint) {
-            isDrawing = false;
-            return;
-        }
-        e.preventDefault();
-
-        if (editingIndex >= 0) {
-            // 既存線を更新
-            if (editingEndPoint === 'p1') {
-                measurements[editingIndex].p1 = currentPoint;
-            } else {
-                measurements[editingIndex].p2 = currentPoint;
-            }
+        // 2. 新規作成モード
+        isDrawing = true;
+        if (measureMode === 'pen') {
+            currentPath = { points: [p], color: currentPenColor, width: currentPenWidth };
+        } else if (measureMode === 'eraser') {
+            erase(p);
         } else {
-            // 新規測定を追加
-            measurements.push({
-                p1: startPoint,
-                p2: currentPoint
-            });
+            startPoint = p;
+        }
+    }
+
+    function handleMove(e) {
+        if (!isDrawing) return;
+        const p = getPos(e);
+        currentPoint = p;
+
+        if (editingIndex !== -1) {
+            // 編集中の移動
+            const target = (editingType === 'line') ? measurements[editingIndex] : areaPolygons[editingIndex];
+            target[editingEndPoint] = p;
+        } else if (measureMode === 'pen') {
+            currentPath.points.push(p);
+        } else if (measureMode === 'eraser') {
+            erase(p);
+        }
+        drawAll();
+    }
+
+    function handleUp() {
+        if (!isDrawing) return;
+        
+        if (editingIndex === -1) {
+            if (measureMode === 'pen' && currentPath) {
+                freehandPaths.push(currentPath);
+            } else if (measureMode === 'line' && startPoint && currentPoint) {
+                measurements.push({ p1: startPoint, p2: currentPoint });
+            } else if (measureMode === 'area' && startPoint && currentPoint) {
+                areaPolygons.push({ p1: startPoint, p2: currentPoint });
+            }
         }
 
         isDrawing = false;
-        startPoint = null;
-        currentPoint = null;
+        startPoint = currentPoint = currentPath = null;
         editingIndex = -1;
-        editingEndPoint = null;
-        fixedPoint = null;
-        
-        updateMeasurementList();
-        drawAllMeasurements();
+        updateList();
+        drawAll();
     }
 
-    function handleAreaPointerUp(e) {
-        if (editingVertexIndex >= 0) {
-            // 頂点編集終了
-            editingVertexIndex = -1;
-            editingPolygonIndex = -1;
-            isDrawing = false;
-            drawAllMeasurements();
-        }
+    function erase(p) {
+        const hit = 15;
+        freehandPaths = freehandPaths.filter(path => !path.points.some(pt => isNear(pt, p, hit)));
     }
 
-    measureCanvas.addEventListener('mouseup', handlePointerUp);
-    measureCanvas.addEventListener('touchend', handlePointerUp);
+    measureCanvas.addEventListener('mousedown', handleDown);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    measureCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleDown(e); }, {passive:false});
+    measureCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, {passive:false});
+    measureCanvas.addEventListener('touchend', handleUp);
 
-    // iPad：2本指スクロール対応（ベースムーブ）
-    const viewerContainer = document.getElementById('viewer-container');
-    let lastTouchDistance = 0;
-    let lastTouchCenterX = 0;
-    let lastTouchCenterY = 0;
-
-    measureCanvas.addEventListener('touchmove', (e) => {
-        if (e.touches && e.touches.length === 2) {
-            // 2指だけの場合を処理
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            
-            const dx = touch1.clientX - touch2.clientX;
-            const dy = touch1.clientY - touch2.clientY;
-            const distance = Math.sqrt(dx*dx + dy*dy);
-            
-            const centerX = (touch1.clientX + touch2.clientX) / 2;
-            const centerY = (touch1.clientY + touch2.clientY) / 2;
-            
-            if (lastTouchDistance > 0) {
-                // 測定→編集中でない場合、パン処理
-                const deltaX = centerX - lastTouchCenterX;
-                const deltaY = centerY - lastTouchCenterY;
-                viewerContainer.scrollLeft -= deltaX;
-                viewerContainer.scrollTop -= deltaY;
-            }
-            
-            lastTouchDistance = distance;
-            lastTouchCenterX = centerX;
-            lastTouchCenterY = centerY;
-            e.preventDefault();
-        } else {
-            // 1指の場合はリセット
-            lastTouchDistance = 0;
-            lastTouchCenterX = 0;
-            lastTouchCenterY = 0;
-        }
-    }, { passive: false });
-
-    measureCanvas.addEventListener('touchstart', (e) => {
-        if (e.touches && e.touches.length === 2) {
-            lastTouchDistance = 0; // 2指接触時を初期化
-        }
-    }, { passive: false });
-
-    document.addEventListener('touchend', () => {
-        lastTouchDistance = 0;
-    });
-
-    // 線の近くかどうか判定
-    function isNearLine(x, y, p1, p2, threshold = 10) {
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const len = Math.sqrt(dx*dx + dy*dy);
-        if (len === 0) return Math.hypot(x - p1.x, y - p1.y) < threshold;
-        
-        const t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / (len * len)));
-        const closestX = p1.x + t * dx;
-        const closestY = p1.y + t * dy;
-        const dist = Math.hypot(x - closestX, y - closestY);
-        return dist < threshold;
-    }
-
-    // すべての測定線を描画
-    function drawAllMeasurements() {
+    function drawAll() {
         measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
-        drawLineMeasurements();
-        drawAreaMeasurements();
-    }
-
-    function drawLineMeasurements() {
-        // 既存の測定を描画
-        measurements.forEach((m, idx) => {
-            measureCtx.strokeStyle = idx === editingIndex ? '#ff7f00' : 'red';
-            measureCtx.lineWidth = 2;
-            measureCtx.beginPath();
-            measureCtx.moveTo(m.p1.x, m.p1.y);
-            measureCtx.lineTo(m.p2.x, m.p2.y);
-            measureCtx.stroke();
-
-            // 点
-            measureCtx.fillStyle = 'red';
-            measureCtx.beginPath();
-            measureCtx.arc(m.p1.x, m.p1.y, 4, 0, Math.PI * 2);
-            measureCtx.fill();
-            measureCtx.beginPath();
-            measureCtx.arc(m.p2.x, m.p2.y, 4, 0, Math.PI * 2);
-            measureCtx.fill();
-
-            // 寸法表示（中央揃え）
-            const midX = (m.p1.x + m.p2.x) / 2;
-            const midY = (m.p1.y + m.p2.y) / 2;
-            const distMM = calculateDistanceValue(m.p1, m.p2);
-            measureCtx.fillStyle = 'blue';
-            measureCtx.font = 'bold 14px sans-serif';
-            measureCtx.textAlign = 'center';
-            measureCtx.textBaseline = 'middle';
-            measureCtx.fillText(`${distMM} mm`, midX, midY);
-            measureCtx.textAlign = 'left';
-            measureCtx.textBaseline = 'alphabetic';
-        });
-
-        // ドラッグ中のプレビュー
-        if (isDrawing && startPoint && currentPoint) {
-            // スナップ対象の端点を表示
-            if (!currentPoint.isSnapped) {
-                const endPointThreshold = 15;
-                for (let i = 0; i < measurements.length; i++) {
-                    if (i === editingIndex) continue;
-                    
-                    const dist1 = Math.hypot(currentPoint.x - measurements[i].p1.x, currentPoint.y - measurements[i].p1.y);
-                    const dist2 = Math.hypot(currentPoint.x - measurements[i].p2.x, currentPoint.y - measurements[i].p2.y);
-                    
-                    // スナップ範囲内の端点をハイライト表示
-                    if (dist1 < endPointThreshold) {
-                        measureCtx.fillStyle = '#00ff00';
-                        measureCtx.beginPath();
-                        measureCtx.arc(measurements[i].p1.x, measurements[i].p1.y, 8, 0, Math.PI * 2);
-                        measureCtx.fill();
-                    }
-                    if (dist2 < endPointThreshold) {
-                        measureCtx.fillStyle = '#00ff00';
-                        measureCtx.beginPath();
-                        measureCtx.arc(measurements[i].p2.x, measurements[i].p2.y, 8, 0, Math.PI * 2);
-                        measureCtx.fill();
-                    }
-                }
-            }
-            
-            measureCtx.strokeStyle = currentPoint.isSnapped ? '#00ff00' : '#ffcc00';
-            measureCtx.lineWidth = 2;
-            measureCtx.setLineDash([5, 5]);
-            measureCtx.beginPath();
-            measureCtx.moveTo(startPoint.x, startPoint.y);
-            measureCtx.lineTo(currentPoint.x, currentPoint.y);
-            measureCtx.stroke();
-            measureCtx.setLineDash([]);
-
-            // プレビュー点
-            measureCtx.fillStyle = currentPoint.isSnapped ? '#00ff00' : 'yellow';
-            measureCtx.beginPath();
-            measureCtx.arc(startPoint.x, startPoint.y, 4, 0, Math.PI * 2);
-            measureCtx.fill();
-            measureCtx.beginPath();
-            measureCtx.arc(currentPoint.x, currentPoint.y, 6, 0, Math.PI * 2);
-            measureCtx.fill();
-
-            // プレビュー距離（中央揃え）
-            const prevDistMM = calculateDistanceValue(startPoint, currentPoint);
-            const midX = (startPoint.x + currentPoint.x) / 2;
-            const midY = (startPoint.y + currentPoint.y) / 2;
-            measureCtx.fillStyle = currentPoint.isSnapped ? '#00ff00' : '#ffcc00';
-            measureCtx.font = 'bold 14px sans-serif';
-            measureCtx.textAlign = 'center';
-            measureCtx.textBaseline = 'middle';
-            const snapLabel = currentPoint.isSnapped ? ' ★スナップ中' : '';
-            measureCtx.fillText(`${prevDistMM} mm${snapLabel}`, midX, midY);
-            measureCtx.textAlign = 'left';
-            measureCtx.textBaseline = 'alphabetic';
-        }
-    }
-
-    function drawAreaMeasurements() {
-        // 完成した四角形を描画
-        areaPolygons.forEach((rect, pIdx) => {
-            const p1 = rect.p1;
-            const p2 = rect.p2;
-            const x1 = Math.min(p1.x, p2.x);
-            const y1 = Math.min(p1.y, p2.y);
-            const x2 = Math.max(p1.x, p2.x);
-            const y2 = Math.max(p1.y, p2.y);
-
-            // 四角形を描画
-            measureCtx.strokeStyle = 'red';
-            measureCtx.lineWidth = 2;
-            measureCtx.beginPath();
-            measureCtx.moveTo(x1, y1);
-            measureCtx.lineTo(x2, y1);
-            measureCtx.lineTo(x2, y2);
-            measureCtx.lineTo(x1, y2);
-            measureCtx.lineTo(x1, y1);
-            measureCtx.stroke();
-
-            // 塗りつぶし
-            measureCtx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-            measureCtx.fill();
-
-            // 4隅の頂点を描画
-            const corners = [{x: x1, y: y1}, {x: x2, y: y1}, {x: x2, y: y2}, {x: x1, y: y2}];
-            corners.forEach((corner, idx) => {
-                const isEditing = pIdx === editingPolygonIndex && ((idx === 0 && editingVertexIndex === 0) || (idx === 2 && editingVertexIndex === 1));
-                
-                if (isEditing) {
-                    measureCtx.fillStyle = '#ff7f00';
-                    measureCtx.beginPath();
-                    measureCtx.arc(corner.x, corner.y, 6, 0, Math.PI * 2);
-                    measureCtx.fill();
-                } else {
-                    measureCtx.fillStyle = 'red';
-                    measureCtx.beginPath();
-                    measureCtx.arc(corner.x, corner.y, 4, 0, Math.PI * 2);
-                    measureCtx.fill();
-                }
-            });
-
-            // 面積を計算して表示
-            const areaValue = calculateRectangleArea(rect);
-            const centerX = (x1 + x2) / 2;
-            const centerY = (y1 + y2) / 2;
-            
-            measureCtx.fillStyle = 'blue';
-            measureCtx.font = 'bold 16px sans-serif';
-            measureCtx.textAlign = 'center';
-            measureCtx.textBaseline = 'middle';
-            measureCtx.fillText(`${areaValue} m²`, centerX, centerY);
-        });
-
-        // 現在描画中の四角形プレビューを描画
-        if (currentAreaVertices.length > 0) {
-            const p1 = currentAreaVertices[0];
-            
-            if (currentAreaVertices.length === 1) {
-                // 1点目表示
-                measureCtx.fillStyle = '#0066ff';
-                measureCtx.beginPath();
-                measureCtx.arc(p1.x, p1.y, 4, 0, Math.PI * 2);
-                measureCtx.fill();
-                
-                // 開始点インジケータ
-                measureCtx.strokeStyle = '#0066ff';
-                measureCtx.lineWidth = 2;
-                measureCtx.setLineDash([3, 3]);
-                measureCtx.beginPath();
-                measureCtx.arc(p1.x, p1.y, 15, 0, Math.PI * 2);
-                measureCtx.stroke();
-                measureCtx.setLineDash([]);
-                
-                measureCtx.fillStyle = '#0066ff';
-                measureCtx.font = 'bold 11px sans-serif';
-                measureCtx.textAlign = 'center';
-                measureCtx.textBaseline = 'middle';
-                measureCtx.fillText('開始点', p1.x, p1.y + 25);
-            } else if (currentAreaVertices.length === 2) {
-                // 2点のプレビュー四角形を描画
-                const p2 = currentAreaVertices[1];
-                const x1 = Math.min(p1.x, p2.x);
-                const y1 = Math.min(p1.y, p2.y);
-                const x2 = Math.max(p1.x, p2.x);
-                const y2 = Math.max(p1.y, p2.y);
-
-                measureCtx.strokeStyle = '#ffaa00';
-                measureCtx.lineWidth = 2;
-                measureCtx.setLineDash([5, 5]);
-                measureCtx.beginPath();
-                measureCtx.moveTo(x1, y1);
-                measureCtx.lineTo(x2, y1);
-                measureCtx.lineTo(x2, y2);
-                measureCtx.lineTo(x1, y2);
-                measureCtx.lineTo(x1, y1);
-                measureCtx.stroke();
-                measureCtx.setLineDash([]);
-
-                // 頂点表示
-                const corners = [{x: x1, y: y1}, {x: x2, y: y1}, {x: x2, y: y2}, {x: x1, y: y2}];
-                corners.forEach((corner, idx) => {
-                    const isEditing = idx === editingVertexIndex && editingPolygonIndex < 0;
-                    measureCtx.fillStyle = isEditing ? '#ff7f00' : (idx === 0 ? '#0066ff' : '#ffaa00');
-                    measureCtx.beginPath();
-                    measureCtx.arc(corner.x, corner.y, 4, 0, Math.PI * 2);
-                    measureCtx.fill();
-                });
-
-                // プレビュー面積表示
-                const centerX = (x1 + x2) / 2;
-                const centerY = (y1 + y2) / 2;
-                const width = Math.abs(p2.x - p1.x);
-                const height = Math.abs(p2.y - p1.y);
-                
-                // ピクセル値からmm値に変換
-                const paperSelect = document.getElementById('paper-size');
-                const selectedOption = paperSelect.options[paperSelect.selectedIndex];
-                const paperWidthMM = parseFloat(selectedOption.getAttribute('data-w'));
-                const scaleFactor = parseFloat(document.getElementById('scale-factor').value);
-                const mmPerPixel = paperWidthMM / (measureCanvas.width / currentScale);
-                
-                const widthMM = (width / currentScale) * mmPerPixel * scaleFactor;
-                const heightMM = (height / currentScale) * mmPerPixel * scaleFactor;
-                const areaM2 = ((widthMM * heightMM) / 1000000).toFixed(4);
-                
-                measureCtx.fillStyle = '#ffaa00';
-                measureCtx.font = 'bold 14px sans-serif';
-                measureCtx.textAlign = 'center';
-                measureCtx.textBaseline = 'middle';
-                measureCtx.fillText(`${areaM2} m²`, centerX, centerY);
-            }
-        }
-
-        // 最後の測定結果を表示
-        if (areaPolygons.length > 0) {
-            const lastRect = areaPolygons[areaPolygons.length - 1];
-            const areaValue = calculateRectangleArea(lastRect);
-            document.getElementById('measure-result').innerText = `${areaValue} m²`;
-        } else if (measurements.length > 0) {
-            const lastMeas = measurements[measurements.length - 1];
-            const distMM = calculateDistanceValue(lastMeas.p1, lastMeas.p2);
-            document.getElementById('measure-result').innerText = `${distMM} mm`;
-        }
-    }
-
-    function calculateDistanceValue(p1, p2) {
-        const dx = p1.x - p2.x;
-        const dy = p1.y - p2.y;
-        const pixelDist = Math.sqrt(dx*dx + dy*dy);
-
-        // 用紙設定取得
-        const paperSelect = document.getElementById('paper-size');
-        const selectedOption = paperSelect.options[paperSelect.selectedIndex];
-        const paperWidthMM = parseFloat(selectedOption.getAttribute('data-w'));
-        const scaleFactor = parseFloat(document.getElementById('scale-factor').value);
-
-        const mmPerPixel = paperWidthMM / (measureCanvas.width / currentScale);
-        const realDistMM = (pixelDist / currentScale) * mmPerPixel * scaleFactor;
-
-        return Math.round(realDistMM);
-    }
-
-    function calculateRectangleArea(rect) {
-        const p1 = rect.p1;
-        const p2 = rect.p2;
-        const width = Math.abs(p2.x - p1.x);
-        const height = Math.abs(p2.y - p1.y);
-
-        // ピクセル値からmm値に変換
-        const paperSelect = document.getElementById('paper-size');
-        const selectedOption = paperSelect.options[paperSelect.selectedIndex];
-        const paperWidthMM = parseFloat(selectedOption.getAttribute('data-w'));
-        const scaleFactor = parseFloat(document.getElementById('scale-factor').value);
-
-        const mmPerPixel = paperWidthMM / (measureCanvas.width / currentScale);
-        const widthMM = (width / currentScale) * mmPerPixel * scaleFactor;
-        const heightMM = (height / currentScale) * mmPerPixel * scaleFactor;
         
-        // mm²をm²に変換
-        const areaM2 = ((widthMM * heightMM) / 1000000).toFixed(4);
-        
-        return areaM2;
-    }
-
-    function resetMeasurement() {
-        measurements = [];
-        areaPolygons = [];
-        currentAreaVertices = [];
-        isDrawing = false;
-        startPoint = null;
-        currentPoint = null;
-        editingIndex = -1;
-        editingVertexIndex = -1;
-        editingPolygonIndex = -1;
-        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
-        updateMeasurementList();
-        
-        if (measureMode === 'area') {
-            document.getElementById('measure-result').innerText = '0 m²';
-        } else {
-            document.getElementById('measure-result').innerText = '0 mm';
-        }
-    }
-
-    function updateMeasurementList() {
-        const listEl = document.getElementById('measurement-items');
-        listEl.innerHTML = '';
-
-        // 線測定の結果を表示
-        measurements.forEach((m, idx) => {
-            const dist = calculateDistanceValue(m.p1, m.p2);
-            const item = document.createElement('div');
-            item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px; margin-bottom: 4px; background: #e3f2fd; border-radius: 3px; font-size: 11px; border-left: 3px solid #2196F3;';
-            item.innerHTML = `
-                <span style="flex: 1;">線${idx + 1}: <strong>${dist} mm</strong></span>
-                <button style="padding: 2px 8px; font-size: 10px; background: #ef4444; color: white; border: none; border-radius: 2px; cursor: pointer;" onclick="deleteMeasurement(${idx})">×</button>
-            `;
-            listEl.appendChild(item);
+        // ペン
+        [...freehandPaths, currentPath].forEach(path => {
+            if (!path || path.points.length < 2) return;
+            measureCtx.beginPath();
+            measureCtx.strokeStyle = path.color;
+            measureCtx.lineWidth = path.width;
+            measureCtx.lineCap = 'round';
+            measureCtx.lineJoin = 'round';
+            measureCtx.moveTo(path.points[0].x, path.points[0].y);
+            path.points.forEach(pt => measureCtx.lineTo(pt.x, pt.y));
+            measureCtx.stroke();
         });
 
-        // 面積測定の結果を表示
-        areaPolygons.forEach((rect, idx) => {
-            const areaM2 = calculateRectangleArea(rect);
-            const item = document.createElement('div');
-            item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px; margin-bottom: 4px; background: #f3e5f5; border-radius: 3px; font-size: 11px; border-left: 3px solid #9C27B0;';
-            item.innerHTML = `
-                <span style="flex: 1;">面積${idx + 1}: <strong>${areaM2} m²</strong></span>
-                <button style="padding: 2px 8px; font-size: 10px; background: #ef4444; color: white; border: none; border-radius: 2px; cursor: pointer;" onclick="deleteArea(${idx})">×</button>
-            `;
-            listEl.appendChild(item);
+        // 線測定
+        measurements.forEach((m, i) => drawLine(m.p1, m.p2, (editingIndex===i && editingType==='line') ? '#ff7f00':'red'));
+        if (measureMode === 'line' && isDrawing && startPoint && currentPoint && editingIndex===-1) drawLine(startPoint, currentPoint, '#ff7f00', true);
+
+        // 面積測定
+        areaPolygons.forEach((a, i) => drawArea(a.p1, a.p2, (editingIndex===i && editingType==='area') ? 'rgba(255,165,0,0.3)':'rgba(255,0,0,0.15)'));
+        if (measureMode === 'area' && isDrawing && startPoint && currentPoint && editingIndex===-1) drawArea(startPoint, currentPoint, 'rgba(255,165,0,0.2)');
+    }
+
+    function drawLine(p1, p2, color, dash=false) {
+        measureCtx.beginPath();
+        measureCtx.strokeStyle = color;
+        measureCtx.lineWidth = 2;
+        if (dash) measureCtx.setLineDash([5,5]);
+        measureCtx.moveTo(p1.x, p1.y);
+        measureCtx.lineTo(p2.x, p2.y);
+        measureCtx.stroke();
+        measureCtx.setLineDash([]);
+        
+        // 端点
+        measureCtx.fillStyle = color;
+        measureCtx.beginPath(); measureCtx.arc(p1.x, p1.y, 4, 0, Math.PI*2); measureCtx.fill();
+        measureCtx.beginPath(); measureCtx.arc(p2.x, p2.y, 4, 0, Math.PI*2); measureCtx.fill();
+
+        const d = calcDist(p1, p2);
+        measureCtx.fillStyle = 'blue';
+        measureCtx.font = 'bold 12px sans-serif';
+        measureCtx.fillText(`${d}mm`, (p1.x+p2.x)/2, (p1.y+p2.y)/2);
+    }
+
+    function drawArea(p1, p2, fill) {
+        const x = Math.min(p1.x, p2.x), y = Math.min(p1.y, p2.y);
+        const w = Math.abs(p2.x-p1.x), h = Math.abs(p2.y-p1.y);
+        measureCtx.fillStyle = fill;
+        measureCtx.fillRect(x, y, w, h);
+        measureCtx.strokeStyle = 'red';
+        measureCtx.strokeRect(x, y, w, h);
+        
+        // 角
+        measureCtx.fillStyle = 'red';
+        [{x:p1.x,y:p1.y}, {x:p2.x,y:p2.y}].forEach(p => {
+            measureCtx.beginPath(); measureCtx.arc(p.x, p.y, 4, 0, Math.PI*2); measureCtx.fill();
         });
 
-        if (listEl.innerHTML === '') {
-            listEl.innerHTML = '<div style="color: #999; font-size: 11px;">未測定</div>';
-        }
+        const a = calcArea({p1, p2});
+        measureCtx.fillStyle = 'blue';
+        measureCtx.font = 'bold 14px sans-serif';
+        measureCtx.textAlign = "center";
+        measureCtx.fillText(`${a}m²`, x+w/2, y+h/2);
+        measureCtx.textAlign = "left";
     }
 
-    function deleteMeasurement(idx) {
-        measurements.splice(idx, 1);
-        updateMeasurementList();
-        drawAllMeasurements();
+    function calcDist(p1, p2) {
+        const px = Math.hypot(p1.x-p2.x, p1.y-p2.y);
+        const pw = parseFloat(document.getElementById('paper-size').selectedOptions[0].dataset.w);
+        const sc = parseFloat(document.getElementById('scale-factor').value);
+        const mpp = pw / (measureCanvas.width / currentScale);
+        return Math.round((px / currentScale) * mpp * sc);
     }
 
-    function deleteArea(idx) {
-        areaPolygons.splice(idx, 1);
-        updateMeasurementList();
-        drawAllMeasurements();
+    function calcArea(rect) {
+        const w = Math.abs(rect.p1.x-rect.p2.x), h = Math.abs(rect.p1.y-rect.p2.y);
+        const pw = parseFloat(document.getElementById('paper-size').selectedOptions[0].dataset.w);
+        const sc = parseFloat(document.getElementById('scale-factor').value);
+        const mpp = pw / (measureCanvas.width / currentScale);
+        const wmm = (w/currentScale)*mpp*sc, hmm = (h/currentScale)*mpp*sc;
+        return ((wmm * hmm) / 1000000).toFixed(3);
+    }
+
+    function updateList() {
+        const list = document.getElementById('measurement-items');
+        list.innerHTML = '';
+        measurements.forEach((m,i) => list.innerHTML += `<div>線${i+1}: ${calcDist(m.p1, m.p2)}mm</div>`);
+        areaPolygons.forEach((a,i) => list.innerHTML += `<div>面${i+1}: ${calcArea(a)}m²</div>`);
+    }
+
+    function resetAll() {
+        measurements = []; areaPolygons = []; freehandPaths = []; drawAll(); updateList();
     }
 
     async function exportToPDF() {
-        if (!pdfDoc) {
-            alert('PDFを読み込んでください');
-            return;
-        }
-
-        if (measurements.length === 0 && areaPolygons.length === 0) {
-            alert('測定データがありません');
-            return;
-        }
-
-        // ファイル名を入力させる
-        const fileName = prompt('ファイル名を入力してください（.pdfは自動付加）', 'measured-drawing');
-        if (fileName === null) return; // キャンセルした場合
+        if (!pdfDoc) return alert("PDFを読み込んでください");
+        const name = prompt("ファイル名を入力", "output_drawing");
+        if (!name) return;
 
         const page = await pdfDoc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: currentScale });
-        
-        // 元のPDFの画質を保持しつつ、測定数値を追加
-        // 元のPDFキャンバスを描画
-        const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = viewport.width;
-        exportCanvas.height = viewport.height;
-        const exportCtx = exportCanvas.getContext('2d');
+        const v = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = v.width; canvas.height = v.height;
 
-        // 元のPDFを描画
-        const renderContext = { canvasContext: exportCtx, viewport: viewport };
-        await page.render(renderContext).promise;
+        await page.render({ canvasContext: ctx, viewport: v }).promise;
 
-        // 計測データを描画
-        // 線
-        measurements.forEach((m) => {
-            exportCtx.strokeStyle = 'red';
-            exportCtx.lineWidth = 2;
-            exportCtx.beginPath();
-            exportCtx.moveTo(m.p1.x, m.p1.y);
-            exportCtx.lineTo(m.p2.x, m.p2.y);
-            exportCtx.stroke();
+        const s = 2.0 / currentScale;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-            exportCtx.fillStyle = 'red';
-            exportCtx.beginPath();
-            exportCtx.arc(m.p1.x, m.p1.y, 4, 0, Math.PI * 2);
-            exportCtx.fill();
-            exportCtx.beginPath();
-            exportCtx.arc(m.p2.x, m.p2.y, 4, 0, Math.PI * 2);
-            exportCtx.fill();
-
-            const midX = (m.p1.x + m.p2.x) / 2;
-            const midY = (m.p1.y + m.p2.y) / 2;
-            const distMM = calculateDistanceValue(m.p1, m.p2);
-            exportCtx.fillStyle = 'blue';
-            exportCtx.font = 'bold 14px sans-serif';
-            exportCtx.textAlign = 'center';
-            exportCtx.textBaseline = 'middle';
-            exportCtx.fillText(`${distMM} mm`, midX, midY);
+        freehandPaths.forEach(path => {
+            ctx.beginPath(); ctx.strokeStyle = path.color; ctx.lineWidth = path.width * s;
+            ctx.moveTo(path.points[0].x*s, path.points[0].y*s);
+            path.points.forEach(p => ctx.lineTo(p.x*s, p.y*s));
+            ctx.stroke();
         });
 
-        // 面積（完成した四角形）
-        areaPolygons.forEach((rect) => {
-            const p1 = rect.p1;
-            const p2 = rect.p2;
-            const x1 = Math.min(p1.x, p2.x);
-            const y1 = Math.min(p1.y, p2.y);
-            const x2 = Math.max(p1.x, p2.x);
-            const y2 = Math.max(p1.y, p2.y);
-
-            exportCtx.strokeStyle = 'red';
-            exportCtx.lineWidth = 2;
-            exportCtx.beginPath();
-            exportCtx.moveTo(x1, y1);
-            exportCtx.lineTo(x2, y1);
-            exportCtx.lineTo(x2, y2);
-            exportCtx.lineTo(x1, y2);
-            exportCtx.lineTo(x1, y1);
-            exportCtx.stroke();
-
-            exportCtx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-            exportCtx.fill();
-
-            const corners = [{x: x1, y: y1}, {x: x2, y: y1}, {x: x2, y: y2}, {x: x1, y: y2}];
-            corners.forEach((corner) => {
-                exportCtx.fillStyle = 'red';
-                exportCtx.beginPath();
-                exportCtx.arc(corner.x, corner.y, 4, 0, Math.PI * 2);
-                exportCtx.fill();
-            });
-
-            const areaM2 = calculateRectangleArea(rect);
-            const centerX = (x1 + x2) / 2;
-            const centerY = (y1 + y2) / 2;
-            
-            exportCtx.fillStyle = 'blue';
-            exportCtx.font = 'bold 16px sans-serif';
-            exportCtx.textAlign = 'center';
-            exportCtx.textBaseline = 'middle';
-            exportCtx.fillText(`${areaM2} m²`, centerX, centerY);
+        ctx.font = `bold ${12 * s}px sans-serif`;
+        measurements.forEach(m => {
+            ctx.strokeStyle = 'red'; ctx.lineWidth = 2 * s;
+            ctx.beginPath(); ctx.moveTo(m.p1.x*s, m.p1.y*s); ctx.lineTo(m.p2.x*s, m.p2.y*s); ctx.stroke();
+            ctx.fillStyle = 'blue'; ctx.fillText(`${calcDist(m.p1, m.p2)}mm`, ((m.p1.x+m.p2.x)/2)*s, ((m.p1.y+m.p2.y)/2)*s);
         });
 
-        // キャンバスをPNG画像に変換
-        const imgData = exportCanvas.toDataURL('image/png');
-
-        // jsPDFを使用して出力
-        let orientation = 'p';
-        let pdfFormat = 'a4';
-        if (viewport.width > viewport.height) {
-            orientation = 'l';
-        }
-
-        try {
-            const { jsPDF } = window;
-            const pdf = new jsPDF({
-                orientation: orientation,
-                unit: 'mm',
-                format: pdfFormat,
-                compress: false
-            });
-
-            const pdfWidth = orientation === 'l' ? 297 : 210;
-            const pdfHeight = orientation === 'l' ? 210 : 297;
-            
-            // 画像をPDFに追加（スケールを調整）
-            const imgWidth = pdfWidth - 10;
-            const imgHeight = (exportCanvas.height / exportCanvas.width) * imgWidth;
-            
-            pdf.addImage(imgData, 'PNG', 5, 5, imgWidth, imgHeight);
-            
-            // PDFを保存（jsPDFの save メソッドを使用）
-            pdf.save(fileName + '.pdf');
-            
-            alert('PDFを保存しました');
-        } catch (error) {
-            console.error('PDF export error:', error);
-            alert('PDFの生成に失敗しました: ' + error.message);
-        }
-    }
-
-    async function printPDF() {
-        if (!pdfDoc) {
-            alert('PDFを読み込んでください');
-            return;
-        }
-
-        if (measurements.length === 0 && areaPolygons.length === 0) {
-            alert('測定データがありません');
-            return;
-        }
-
-        // ファイル名を入力させる
-        const fileName = prompt('ファイル名を入力してください（.pdfは自動付加）', 'print-drawing');
-        if (fileName === null) return; // キャンセルした場合
-
-        const page = await pdfDoc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: currentScale });
-        
-        // 元のPDFキャンバスを描画
-        const printCanvas = document.createElement('canvas');
-        printCanvas.width = viewport.width;
-        printCanvas.height = viewport.height;
-        const printCtx = printCanvas.getContext('2d');
-
-        // 元のPDFを描画
-        const renderContext = { canvasContext: printCtx, viewport: viewport };
-        await page.render(renderContext).promise;
-
-        // 計測データを描画
-        // 線
-        measurements.forEach((m) => {
-            printCtx.strokeStyle = 'red';
-            printCtx.lineWidth = 2;
-            printCtx.beginPath();
-            printCtx.moveTo(m.p1.x, m.p1.y);
-            printCtx.lineTo(m.p2.x, m.p2.y);
-            printCtx.stroke();
-
-            printCtx.fillStyle = 'red';
-            printCtx.beginPath();
-            printCtx.arc(m.p1.x, m.p1.y, 4, 0, Math.PI * 2);
-            printCtx.fill();
-            printCtx.beginPath();
-            printCtx.arc(m.p2.x, m.p2.y, 4, 0, Math.PI * 2);
-            printCtx.fill();
-
-            const midX = (m.p1.x + m.p2.x) / 2;
-            const midY = (m.p1.y + m.p2.y) / 2;
-            const distMM = calculateDistanceValue(m.p1, m.p2);
-            printCtx.fillStyle = 'blue';
-            printCtx.font = 'bold 14px sans-serif';
-            printCtx.textAlign = 'center';
-            printCtx.textBaseline = 'middle';
-            printCtx.fillText(`${distMM} mm`, midX, midY);
+        areaPolygons.forEach(a => {
+            const x = Math.min(a.p1.x, a.p2.x)*s, y = Math.min(a.p1.y, a.p2.y)*s;
+            const w = Math.abs(a.p2.x-a.p1.x)*s, h = Math.abs(a.p2.y-a.p1.y)*s;
+            ctx.fillStyle = 'rgba(255,0,0,0.15)'; ctx.fillRect(x,y,w,h);
+            ctx.strokeStyle = 'red'; ctx.strokeRect(x,y,w,h);
+            ctx.fillStyle = 'blue'; ctx.textAlign = "center";
+            ctx.fillText(`${calcArea(a)}m²`, x+w/2, y+h/2);
         });
 
-        // 面積（完成した四角形）
-        areaPolygons.forEach((rect) => {
-            const p1 = rect.p1;
-            const p2 = rect.p2;
-            const x1 = Math.min(p1.x, p2.x);
-            const y1 = Math.min(p1.y, p2.y);
-            const x2 = Math.max(p1.x, p2.x);
-            const y2 = Math.max(p1.y, p2.y);
-
-            printCtx.strokeStyle = 'red';
-            printCtx.lineWidth = 2;
-            printCtx.beginPath();
-            printCtx.moveTo(x1, y1);
-            printCtx.lineTo(x2, y1);
-            printCtx.lineTo(x2, y2);
-            printCtx.lineTo(x1, y2);
-            printCtx.lineTo(x1, y1);
-            printCtx.stroke();
-
-            printCtx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-            printCtx.fill();
-
-            const corners = [{x: x1, y: y1}, {x: x2, y: y1}, {x: x2, y: y2}, {x: x1, y: y2}];
-            corners.forEach((corner) => {
-                printCtx.fillStyle = 'red';
-                printCtx.beginPath();
-                printCtx.arc(corner.x, corner.y, 4, 0, Math.PI * 2);
-                printCtx.fill();
-            });
-
-            const areaM2 = calculateRectangleArea(rect);
-            const centerX = (x1 + x2) / 2;
-            const centerY = (y1 + y2) / 2;
-            
-            printCtx.fillStyle = 'blue';
-            printCtx.font = 'bold 16px sans-serif';
-            printCtx.textAlign = 'center';
-            printCtx.textBaseline = 'middle';
-            printCtx.fillText(`${areaM2} m²`, centerX, centerY);
-        });
-
-        // キャンバスをPNG画像に変換
-        const imgData = printCanvas.toDataURL('image/png');
-
-        // jsPDFを使用してPDFを生成
-        let orientation = 'p';
-        let pdfFormat = 'a4';
-        if (viewport.width > viewport.height) {
-            orientation = 'l';
-        }
-
-        try {
-            const { jsPDF } = window;
-            const pdf = new jsPDF({
-                orientation: orientation,
-                unit: 'mm',
-                format: pdfFormat,
-                compress: false
-            });
-
-            const pdfWidth = orientation === 'l' ? 297 : 210;
-            const pdfHeight = orientation === 'l' ? 210 : 297;
-            
-            // 画像をPDFに追加
-            const imgWidth = pdfWidth - 10;
-            const imgHeight = (printCanvas.height / printCanvas.width) * imgWidth;
-            
-            pdf.addImage(imgData, 'PNG', 5, 5, imgWidth, imgHeight);
-            
-            // PDFを保存
-            pdf.save(fileName + '.pdf');
-            
-            alert('PDFをダウンロードしました');
-        } catch (error) {
-            console.error('PDF download error:', error);
-            alert('PDFのダウンロードに失敗しました: ' + error.message);
-        }
+        const { jsPDF } = window.jspdf;
+        const out = new jsPDF(v.width > v.height ? 'l' : 'p', 'px', [v.width, v.height]);
+        out.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, v.width, v.height);
+        out.save(`${name}.pdf`);
     }
 </script>
-
 </body>
 </html>
+
