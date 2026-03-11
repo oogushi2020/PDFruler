@@ -127,6 +127,8 @@
     let startPoint = null;
     let currentPoint = null;
     let editingIndex = -1; // 編集中の測定インデックス
+    let editingEndPoint = null; // 編集中の終点（'p1' または 'p2'）
+    let fixedPoint = null; // 編集中の固定点
 
     const pdfCanvas = document.getElementById('pdf-canvas');
     const measureCanvas = document.getElementById('measure-canvas');
@@ -226,16 +228,41 @@
         };
     }
 
+    // 線の端点に近いかどうか判定（閾値10px）
+    function isNearEndPoint(x, y, point, threshold = 10) {
+        const dist = Math.hypot(x - point.x, y - point.y);
+        return dist < threshold;
+    }
+
     // 掴作開始（マウス/タッチ両対応）
     function handlePointerDown(e) {
+        // iPad：1指以上の場合は処理を継続
+        if (e.touches && e.touches.length > 1) {
+            // 2指以上の場合はscrollを許容
+            return;
+        }
+        
         e.preventDefault();
         const coords = getClientCoordinates(e);
 
-        // 既存の測定線をクリックしたか確認
+        // 既存の測定線の端点をクリックしたか確認
         for (let i = 0; i < measurements.length; i++) {
-            if (isNearLine(coords.x, coords.y, measurements[i].p1, measurements[i].p2)) {
+            // p1（始点）をクリックしたか確認
+            if (isNearEndPoint(coords.x, coords.y, measurements[i].p1, 10)) {
                 editingIndex = i;
-                startPoint = measurements[i].p1;
+                editingEndPoint = 'p1'; // p1を編集
+                fixedPoint = measurements[i].p2; // p2を固定
+                startPoint = fixedPoint;
+                isDrawing = true;
+                return;
+            }
+            
+            // p2（終点）をクリックしたか確認
+            if (isNearEndPoint(coords.x, coords.y, measurements[i].p2, 10)) {
+                editingIndex = i;
+                editingEndPoint = 'p2'; // p2を編集
+                fixedPoint = measurements[i].p1; // p1を固定
+                startPoint = fixedPoint;
                 isDrawing = true;
                 return;
             }
@@ -243,6 +270,8 @@
 
         // 新規測定開始
         editingIndex = -1;
+        editingEndPoint = null;
+        fixedPoint = null;
         startPoint = { x: coords.x, y: coords.y };
         isDrawing = true;
     }
@@ -253,6 +282,12 @@
     // ポインタ移動（マウス/タッチ両対応）
     function handlePointerMove(e) {
         if (!isDrawing || !startPoint) return;
+        
+        // iPad：2指以上の場合は処理を継続
+        if (e.touches && e.touches.length > 1) {
+            return;
+        }
+        
         e.preventDefault();
 
         const coords = getClientCoordinates(e);
@@ -273,7 +308,11 @@
 
         if (editingIndex >= 0) {
             // 既存線を更新
-            measurements[editingIndex].p2 = currentPoint;
+            if (editingEndPoint === 'p1') {
+                measurements[editingIndex].p1 = currentPoint;
+            } else {
+                measurements[editingIndex].p2 = currentPoint;
+            }
         } else {
             // 新規測定を追加
             measurements.push({
@@ -286,12 +325,63 @@
         startPoint = null;
         currentPoint = null;
         editingIndex = -1;
+        editingEndPoint = null;
+        fixedPoint = null;
         
         drawAllMeasurements();
     }
 
     measureCanvas.addEventListener('mouseup', handlePointerUp);
     measureCanvas.addEventListener('touchend', handlePointerUp);
+
+    // iPad：2本指スクロール対応（ベースムーブ）
+    const viewerContainer = document.getElementById('viewer-container');
+    let lastTouchDistance = 0;
+    let lastTouchCenterX = 0;
+    let lastTouchCenterY = 0;
+
+    measureCanvas.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches.length === 2) {
+            // 2指だけの場合を処理
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            
+            const dx = touch1.clientX - touch2.clientX;
+            const dy = touch1.clientY - touch2.clientY;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            const centerX = (touch1.clientX + touch2.clientX) / 2;
+            const centerY = (touch1.clientY + touch2.clientY) / 2;
+            
+            if (lastTouchDistance > 0) {
+                // 測定→編集中でない場合、パン処理
+                const deltaX = centerX - lastTouchCenterX;
+                const deltaY = centerY - lastTouchCenterY;
+                viewerContainer.scrollLeft -= deltaX;
+                viewerContainer.scrollTop -= deltaY;
+            }
+            
+            lastTouchDistance = distance;
+            lastTouchCenterX = centerX;
+            lastTouchCenterY = centerY;
+            e.preventDefault();
+        } else {
+            // 1指の場合はリセット
+            lastTouchDistance = 0;
+            lastTouchCenterX = 0;
+            lastTouchCenterY = 0;
+        }
+    }, { passive: false });
+
+    measureCanvas.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length === 2) {
+            lastTouchDistance = 0; // 2指接触時を初期化
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchend', () => {
+        lastTouchDistance = 0;
+    });
 
     // 線の近くかどうか判定
     function isNearLine(x, y, p1, p2, threshold = 10) {
@@ -329,13 +419,17 @@
             measureCtx.arc(m.p2.x, m.p2.y, 4, 0, Math.PI * 2);
             measureCtx.fill();
 
-            // 寸法表示
+            // 寸法表示（中央揃え）
             const midX = (m.p1.x + m.p2.x) / 2;
             const midY = (m.p1.y + m.p2.y) / 2;
             const distMM = calculateDistanceValue(m.p1, m.p2);
             measureCtx.fillStyle = 'blue';
             measureCtx.font = 'bold 14px sans-serif';
-            measureCtx.fillText(`${distMM} mm`, midX + 10, midY - 10);
+            measureCtx.textAlign = 'center';
+            measureCtx.textBaseline = 'middle';
+            measureCtx.fillText(`${distMM} mm`, midX, midY);
+            measureCtx.textAlign = 'left';
+            measureCtx.textBaseline = 'alphabetic';
         });
 
         // ドラッグ中のプレビュー
@@ -358,13 +452,17 @@
             measureCtx.arc(currentPoint.x, currentPoint.y, 4, 0, Math.PI * 2);
             measureCtx.fill();
 
-            // プレビュー距離
+            // プレビュー距離（中央揃え）
             const prevDistMM = calculateDistanceValue(startPoint, currentPoint);
             const midX = (startPoint.x + currentPoint.x) / 2;
             const midY = (startPoint.y + currentPoint.y) / 2;
             measureCtx.fillStyle = '#ffcc00';
             measureCtx.font = 'bold 14px sans-serif';
-            measureCtx.fillText(`${prevDistMM} mm (プレビュー)`, midX + 10, midY - 10);
+            measureCtx.textAlign = 'center';
+            measureCtx.textBaseline = 'middle';
+            measureCtx.fillText(`${prevDistMM} mm (プレビュー)`, midX, midY);
+            measureCtx.textAlign = 'left';
+            measureCtx.textBaseline = 'alphabetic';
         }
     }
 
