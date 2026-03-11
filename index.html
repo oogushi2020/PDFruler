@@ -101,7 +101,7 @@
         <div>測定結果:</div>
         <div class="result-value" id="measure-result">0 mm</div>
         <div style="font-size: 11px; margin-top: 5px; color: #666;">
-            ※スナップ有効：黒い線付近で吸着します
+            ※角度スナップ有効（45度単位）
         </div>
     </div>
     
@@ -122,7 +122,12 @@
     let pdfDoc = null;
     let pageNum = 1;
     let currentScale = 1.5;
-    let points = [];
+    let measurements = []; // 測定履歴
+    let isDrawing = false;
+    let startPoint = null;
+    let currentPoint = null;
+    let editingIndex = -1; // 編集中の測定インデックス
+
     const pdfCanvas = document.getElementById('pdf-canvas');
     const measureCanvas = document.getElementById('measure-canvas');
     const pdfCtx = pdfCanvas.getContext('2d');
@@ -160,79 +165,178 @@
         const renderContext = { canvasContext: pdfCtx, viewport: viewport };
         await page.render(renderContext).promise;
         
-        resetMeasurement();
+        drawAllMeasurements();
     }
 
-    // スナップ機能：指定座標の周囲で一番暗い（線がある）ピクセルを探す
-    function getSnappedPoint(x, y) {
-        const radius = 10; // 検索範囲
-        const imageData = pdfCtx.getImageData(x - radius, y - radius, radius * 2, radius * 2);
-        const data = imageData.data;
-        let minBrightness = 255;
-        let snapX = x;
-        let snapY = y;
-
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i+1];
-            const b = data[i+2];
-            const brightness = (r + g + b) / 3;
-
-            if (brightness < minBrightness) {
-                minBrightness = brightness;
-                const pixelIdx = i / 4;
-                const localX = pixelIdx % (radius * 2);
-                const localY = Math.floor(pixelIdx / (radius * 2));
-                snapX = (x - radius) + localX;
-                snapY = (y - radius) + localY;
+    // 角度スナップ：最も近い45度単位の角度にスナップ
+    function snapToAngle(p1, p2) {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        
+        // 最も近い45度単位にスナップ
+        const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+        angle = (angle + 360) % 360;
+        
+        let closestAngle = snapAngles[0];
+        let minDiff = 360;
+        for (let sa of snapAngles) {
+            let diff = Math.abs(angle - sa);
+            if (diff > 180) diff = 360 - diff;
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestAngle = sa;
             }
         }
-        // 輝度が一定以上暗い場合のみスナップ
-        return minBrightness < 150 ? { x: snapX, y: snapY } : { x, y };
+        
+        // 15度以内ならスナップ
+        if (minDiff < 15) {
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const newAngle = closestAngle * Math.PI / 180;
+            return {
+                x: p1.x + Math.cos(newAngle) * dist,
+                y: p1.y + Math.sin(newAngle) * dist
+            };
+        }
+        return p2;
     }
 
-    // 計測ロジック
+    // マウスダウン：測定開始
     measureCanvas.addEventListener('mousedown', (e) => {
         const rect = measureCanvas.getBoundingClientRect();
-        let mouseX = e.clientX - rect.left;
-        let mouseY = e.clientY - rect.top;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
-        // スナップ適用
-        const snapped = getSnappedPoint(mouseX, mouseY);
-        
-        if (points.length >= 2) points = [];
-        points.push(snapped);
+        // 既存の測定線をクリックしたか確認
+        for (let i = 0; i < measurements.length; i++) {
+            if (isNearLine(mouseX, mouseY, measurements[i].p1, measurements[i].p2)) {
+                editingIndex = i;
+                startPoint = measurements[i].p1;
+                isDrawing = true;
+                return;
+            }
+        }
 
-        drawMeasurements();
+        // 新規測定開始
+        editingIndex = -1;
+        startPoint = { x: mouseX, y: mouseY };
+        isDrawing = true;
     });
 
-    function drawMeasurements() {
-        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
-        
-        if (points.length > 0) {
-            measureCtx.fillStyle = 'red';
-            points.forEach(p => {
-                measureCtx.beginPath();
-                measureCtx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                measureCtx.fill();
+    // マウスムーブ：動的に線を更新
+    measureCanvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing || !startPoint) return;
+
+        const rect = measureCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        currentPoint = snapToAngle(startPoint, { x: mouseX, y: mouseY });
+        drawAllMeasurements();
+    });
+
+    // マウスアップ：測定確定
+    measureCanvas.addEventListener('mouseup', (e) => {
+        if (!isDrawing || !startPoint || !currentPoint) {
+            isDrawing = false;
+            return;
+        }
+
+        if (editingIndex >= 0) {
+            // 既存線を更新
+            measurements[editingIndex].p2 = currentPoint;
+        } else {
+            // 新規測定を追加
+            measurements.push({
+                p1: startPoint,
+                p2: currentPoint
             });
         }
 
-        if (points.length === 2) {
-            // 線を描画
-            measureCtx.strokeStyle = 'red';
+        isDrawing = false;
+        startPoint = null;
+        currentPoint = null;
+        editingIndex = -1;
+        
+        drawAllMeasurements();
+    });
+
+    // 線の近くかどうか判定
+    function isNearLine(x, y, p1, p2, threshold = 10) {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        if (len === 0) return Math.hypot(x - p1.x, y - p1.y) < threshold;
+        
+        const t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / (len * len)));
+        const closestX = p1.x + t * dx;
+        const closestY = p1.y + t * dy;
+        const dist = Math.hypot(x - closestX, y - closestY);
+        return dist < threshold;
+    }
+
+    // すべての測定線を描画
+    function drawAllMeasurements() {
+        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
+
+        // 既存の測定を描画
+        measurements.forEach((m, idx) => {
+            measureCtx.strokeStyle = idx === editingIndex ? '#ff7f00' : 'red';
             measureCtx.lineWidth = 2;
             measureCtx.beginPath();
-            measureCtx.moveTo(points[0].x, points[0].y);
-            measureCtx.lineTo(points[1].x, points[1].y);
+            measureCtx.moveTo(m.p1.x, m.p1.y);
+            measureCtx.lineTo(m.p2.x, m.p2.y);
             measureCtx.stroke();
 
-            // 計算
-            calculateDistance(points[0], points[1]);
+            // 点
+            measureCtx.fillStyle = 'red';
+            measureCtx.beginPath();
+            measureCtx.arc(m.p1.x, m.p1.y, 4, 0, Math.PI * 2);
+            measureCtx.fill();
+            measureCtx.beginPath();
+            measureCtx.arc(m.p2.x, m.p2.y, 4, 0, Math.PI * 2);
+            measureCtx.fill();
+
+            // 寸法表示
+            const midX = (m.p1.x + m.p2.x) / 2;
+            const midY = (m.p1.y + m.p2.y) / 2;
+            const distMM = calculateDistanceValue(m.p1, m.p2);
+            measureCtx.fillStyle = 'blue';
+            measureCtx.font = 'bold 14px sans-serif';
+            measureCtx.fillText(`${distMM} mm`, midX + 10, midY - 10);
+        });
+
+        // ドラッグ中のプレビュー
+        if (isDrawing && startPoint && currentPoint) {
+            measureCtx.strokeStyle = '#ffcc00';
+            measureCtx.lineWidth = 2;
+            measureCtx.setLineDash([5, 5]);
+            measureCtx.beginPath();
+            measureCtx.moveTo(startPoint.x, startPoint.y);
+            measureCtx.lineTo(currentPoint.x, currentPoint.y);
+            measureCtx.stroke();
+            measureCtx.setLineDash([]);
+
+            // プレビュー点
+            measureCtx.fillStyle = 'yellow';
+            measureCtx.beginPath();
+            measureCtx.arc(startPoint.x, startPoint.y, 4, 0, Math.PI * 2);
+            measureCtx.fill();
+            measureCtx.beginPath();
+            measureCtx.arc(currentPoint.x, currentPoint.y, 4, 0, Math.PI * 2);
+            measureCtx.fill();
+
+            // プレビュー距離
+            const prevDistMM = calculateDistanceValue(startPoint, currentPoint);
+            const midX = (startPoint.x + currentPoint.x) / 2;
+            const midY = (startPoint.y + currentPoint.y) / 2;
+            measureCtx.fillStyle = '#ffcc00';
+            measureCtx.font = 'bold 14px sans-serif';
+            measureCtx.fillText(`${prevDistMM} mm (プレビュー)`, midX + 10, midY - 10);
         }
     }
 
-    function calculateDistance(p1, p2) {
+    function calculateDistanceValue(p1, p2) {
         const dx = p1.x - p2.x;
         const dy = p1.y - p2.y;
         const pixelDist = Math.sqrt(dx*dx + dy*dy);
@@ -243,23 +347,18 @@
         const paperWidthMM = parseFloat(selectedOption.getAttribute('data-w'));
         const scaleFactor = parseFloat(document.getElementById('scale-factor').value);
 
-        // PDFの元々の幅（ポイント単位）を考慮した計算
-        // ここではキャンバスの横幅を用紙の横実寸(mm)として扱う
         const mmPerPixel = paperWidthMM / (measureCanvas.width / currentScale);
         const realDistMM = (pixelDist / currentScale) * mmPerPixel * scaleFactor;
 
-        document.getElementById('measure-result').innerText = `${Math.round(realDistMM).toLocaleString()} mm`;
-
-        // 線の中央にテキスト表示
-        const midX = (p1.x + p2.x) / 2;
-        const midY = (p1.y + p2.y) / 2;
-        measureCtx.fillStyle = 'blue';
-        measureCtx.font = 'bold 16px sans-serif';
-        measureCtx.fillText(`${Math.round(realDistMM)} mm`, midX + 10, midY - 10);
+        return Math.round(realDistMM);
     }
 
     function resetMeasurement() {
-        points = [];
+        measurements = [];
+        isDrawing = false;
+        startPoint = null;
+        currentPoint = null;
+        editingIndex = -1;
         measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
         document.getElementById('measure-result').innerText = '0 mm';
     }
