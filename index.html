@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Drawing Measure Tool</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --sidebar-width: 300px;
+        }
+        body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; background: #f3f4f6; }
+        
+        /* Sidebar Styles */
+        #sidebar {
+            width: var(--sidebar-width);
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 10;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        }
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 12px; font-weight: bold; color: #4b5563; }
+        select, input, button { padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; }
+        button { background: var(--primary); color: white; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+
+        /* Viewer Styles */
+        #viewer-container {
+            flex-grow: 1;
+            position: relative;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background: #525659;
+        }
+        #canvas-wrapper {
+            position: relative;
+            margin: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+        #pdf-canvas { position: absolute; top: 0; left: 0; }
+        #measure-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+
+        .info-panel {
+            margin-top: auto;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .result-value { font-size: 20px; font-weight: bold; color: var(--primary); }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>📏 PDF図面計測</h2>
+    
+    <div class="control-group">
+        <label>① PDFを読み込む</label>
+        <input type="file" id="file-input" accept="application/pdf">
+    </div>
+
+    <div class="control-group">
+        <label>② 用紙サイズ</label>
+        <select id="paper-size">
+            <option value="A4" data-w="297" data-h="210">A4 (297 x 210mm)</option>
+            <option value="A3" data-w="420" data-h="297" selected>A3 (420 x 297mm)</option>
+            <option value="A2" data-w="594" data-h="420">A2 (594 x 420mm)</option>
+            <option value="A1" data-w="841" data-h="594">A1 (841 x 594mm)</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>③ 図面縮尺 (1 : X)</label>
+        <select id="scale-factor">
+            <option value="5">1:5</option>
+            <option value="10">1:10</option>
+            <option value="20">1:20</option>
+            <option value="50">1:50</option>
+            <option value="100" selected>1:100</option>
+            <option value="200">1:200</option>
+            <option value="300">1:300</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>表示倍率</label>
+        <input type="range" id="zoom-range" min="0.5" max="3" step="0.1" value="1.5">
+        <span id="zoom-val">150%</span>
+    </div>
+
+    <div class="info-panel">
+        <div>測定結果:</div>
+        <div class="result-value" id="measure-result">0 mm</div>
+        <div style="font-size: 11px; margin-top: 5px; color: #666;">
+            ※スナップ有効：黒い線付近で吸着します
+        </div>
+    </div>
+    
+    <button onclick="resetMeasurement()">計測をクリア</button>
+</div>
+
+<div id="viewer-container">
+    <div id="canvas-wrapper">
+        <canvas id="pdf-canvas"></canvas>
+        <canvas id="measure-canvas"></canvas>
+    </div>
+</div>
+
+<script>
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    let pdfDoc = null;
+    let pageNum = 1;
+    let currentScale = 1.5;
+    let points = [];
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    const measureCanvas = document.getElementById('measure-canvas');
+    const pdfCtx = pdfCanvas.getContext('2d');
+    const measureCtx = measureCanvas.getContext('2d');
+
+    // PDF 読み込み
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async function() {
+            const typedarray = new Uint8Array(this.result);
+            pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
+            renderPage(pageNum);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // ズーム変更
+    document.getElementById('zoom-range').addEventListener('input', (e) => {
+        currentScale = parseFloat(e.target.value);
+        document.getElementById('zoom-val').innerText = `${Math.round(currentScale*100)}%`;
+        if (pdfDoc) renderPage(pageNum);
+    });
+
+    async function renderPage(num) {
+        const page = await pdfDoc.getPage(num);
+        const viewport = page.getViewport({ scale: currentScale });
+        
+        pdfCanvas.height = viewport.height;
+        pdfCanvas.width = viewport.width;
+        measureCanvas.height = viewport.height;
+        measureCanvas.width = viewport.width;
+
+        const renderContext = { canvasContext: pdfCtx, viewport: viewport };
+        await page.render(renderContext).promise;
+        
+        resetMeasurement();
+    }
+
+    // スナップ機能：指定座標の周囲で一番暗い（線がある）ピクセルを探す
+    function getSnappedPoint(x, y) {
+        const radius = 10; // 検索範囲
+        const imageData = pdfCtx.getImageData(x - radius, y - radius, radius * 2, radius * 2);
+        const data = imageData.data;
+        let minBrightness = 255;
+        let snapX = x;
+        let snapY = y;
+
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i+1];
+            const b = data[i+2];
+            const brightness = (r + g + b) / 3;
+
+            if (brightness < minBrightness) {
+                minBrightness = brightness;
+                const pixelIdx = i / 4;
+                const localX = pixelIdx % (radius * 2);
+                const localY = Math.floor(pixelIdx / (radius * 2));
+                snapX = (x - radius) + localX;
+                snapY = (y - radius) + localY;
+            }
+        }
+        // 輝度が一定以上暗い場合のみスナップ
+        return minBrightness < 150 ? { x: snapX, y: snapY } : { x, y };
+    }
+
+    // 計測ロジック
+    measureCanvas.addEventListener('mousedown', (e) => {
+        const rect = measureCanvas.getBoundingClientRect();
+        let mouseX = e.clientX - rect.left;
+        let mouseY = e.clientY - rect.top;
+
+        // スナップ適用
+        const snapped = getSnappedPoint(mouseX, mouseY);
+        
+        if (points.length >= 2) points = [];
+        points.push(snapped);
+
+        drawMeasurements();
+    });
+
+    function drawMeasurements() {
+        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
+        
+        if (points.length > 0) {
+            measureCtx.fillStyle = 'red';
+            points.forEach(p => {
+                measureCtx.beginPath();
+                measureCtx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                measureCtx.fill();
+            });
+        }
+
+        if (points.length === 2) {
+            // 線を描画
+            measureCtx.strokeStyle = 'red';
+            measureCtx.lineWidth = 2;
+            measureCtx.beginPath();
+            measureCtx.moveTo(points[0].x, points[0].y);
+            measureCtx.lineTo(points[1].x, points[1].y);
+            measureCtx.stroke();
+
+            // 計算
+            calculateDistance(points[0], points[1]);
+        }
+    }
+
+    function calculateDistance(p1, p2) {
+        const dx = p1.x - p2.x;
+        const dy = p1.y - p2.y;
+        const pixelDist = Math.sqrt(dx*dx + dy*dy);
+
+        // 用紙設定取得
+        const paperSelect = document.getElementById('paper-size');
+        const selectedOption = paperSelect.options[paperSelect.selectedIndex];
+        const paperWidthMM = parseFloat(selectedOption.getAttribute('data-w'));
+        const scaleFactor = parseFloat(document.getElementById('scale-factor').value);
+
+        // PDFの元々の幅（ポイント単位）を考慮した計算
+        // ここではキャンバスの横幅を用紙の横実寸(mm)として扱う
+        const mmPerPixel = paperWidthMM / (measureCanvas.width / currentScale);
+        const realDistMM = (pixelDist / currentScale) * mmPerPixel * scaleFactor;
+
+        document.getElementById('measure-result').innerText = `${Math.round(realDistMM).toLocaleString()} mm`;
+
+        // 線の中央にテキスト表示
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+        measureCtx.fillStyle = 'blue';
+        measureCtx.font = 'bold 16px sans-serif';
+        measureCtx.fillText(`${Math.round(realDistMM)} mm`, midX + 10, midY - 10);
+    }
+
+    function resetMeasurement() {
+        points = [];
+        measureCtx.clearRect(0, 0, measureCanvas.width, measureCanvas.height);
+        document.getElementById('measure-result').innerText = '0 mm';
+    }
+</script>
+
+</body>
+</html>
