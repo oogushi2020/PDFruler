@@ -101,7 +101,9 @@
         <div>測定結果:</div>
         <div class="result-value" id="measure-result">0 mm</div>
         <div style="font-size: 11px; margin-top: 5px; color: #666;">
-            ※角度スナップ有効（15度単位） iPad対応
+            ※端点スナップ有効 (15px以内)<br>
+            ※角度スナップ有効（15度単位）<br>
+            ※iPad対応
         </div>
     </div>
     
@@ -291,7 +293,33 @@
         e.preventDefault();
 
         const coords = getClientCoordinates(e);
-        currentPoint = snapToAngle(startPoint, { x: coords.x, y: coords.y });
+        let snapPoint = { x: coords.x, y: coords.y };
+        
+        // 端点スナップ：既存の線の端点に近いかをチェック
+        let isSnapped = false;
+        const endPointThreshold = 15; // スナップ範囲
+        
+        for (let i = 0; i < measurements.length; i++) {
+            // 編集中の線自体はスキップ
+            if (i === editingIndex) continue;
+            
+            const dist1 = Math.hypot(coords.x - measurements[i].p1.x, coords.y - measurements[i].p1.y);
+            const dist2 = Math.hypot(coords.x - measurements[i].p2.x, coords.y - measurements[i].p2.y);
+            
+            if (dist1 < endPointThreshold) {
+                snapPoint = { x: measurements[i].p1.x, y: measurements[i].p1.y };
+                isSnapped = true;
+                break;
+            } else if (dist2 < endPointThreshold) {
+                snapPoint = { x: measurements[i].p2.x, y: measurements[i].p2.y };
+                isSnapped = true;
+                break;
+            }
+        }
+        
+        // 端点スナップが有効でない場合、角度スナップを適用
+        currentPoint = isSnapped ? snapPoint : snapToAngle(startPoint, snapPoint);
+        currentPoint.isSnapped = isSnapped;
         drawAllMeasurements();
     }
 
@@ -434,7 +462,32 @@
 
         // ドラッグ中のプレビュー
         if (isDrawing && startPoint && currentPoint) {
-            measureCtx.strokeStyle = '#ffcc00';
+            // スナップ対象の端点を表示
+            if (!currentPoint.isSnapped) {
+                const endPointThreshold = 15;
+                for (let i = 0; i < measurements.length; i++) {
+                    if (i === editingIndex) continue;
+                    
+                    const dist1 = Math.hypot(currentPoint.x - measurements[i].p1.x, currentPoint.y - measurements[i].p1.y);
+                    const dist2 = Math.hypot(currentPoint.x - measurements[i].p2.x, currentPoint.y - measurements[i].p2.y);
+                    
+                    // スナップ範囲内の端点をハイライト表示
+                    if (dist1 < endPointThreshold) {
+                        measureCtx.fillStyle = '#00ff00';
+                        measureCtx.beginPath();
+                        measureCtx.arc(measurements[i].p1.x, measurements[i].p1.y, 8, 0, Math.PI * 2);
+                        measureCtx.fill();
+                    }
+                    if (dist2 < endPointThreshold) {
+                        measureCtx.fillStyle = '#00ff00';
+                        measureCtx.beginPath();
+                        measureCtx.arc(measurements[i].p2.x, measurements[i].p2.y, 8, 0, Math.PI * 2);
+                        measureCtx.fill();
+                    }
+                }
+            }
+            
+            measureCtx.strokeStyle = currentPoint.isSnapped ? '#00ff00' : '#ffcc00';
             measureCtx.lineWidth = 2;
             measureCtx.setLineDash([5, 5]);
             measureCtx.beginPath();
@@ -444,23 +497,24 @@
             measureCtx.setLineDash([]);
 
             // プレビュー点
-            measureCtx.fillStyle = 'yellow';
+            measureCtx.fillStyle = currentPoint.isSnapped ? '#00ff00' : 'yellow';
             measureCtx.beginPath();
             measureCtx.arc(startPoint.x, startPoint.y, 4, 0, Math.PI * 2);
             measureCtx.fill();
             measureCtx.beginPath();
-            measureCtx.arc(currentPoint.x, currentPoint.y, 4, 0, Math.PI * 2);
+            measureCtx.arc(currentPoint.x, currentPoint.y, 6, 0, Math.PI * 2);
             measureCtx.fill();
 
             // プレビュー距離（中央揃え）
             const prevDistMM = calculateDistanceValue(startPoint, currentPoint);
             const midX = (startPoint.x + currentPoint.x) / 2;
             const midY = (startPoint.y + currentPoint.y) / 2;
-            measureCtx.fillStyle = '#ffcc00';
+            measureCtx.fillStyle = currentPoint.isSnapped ? '#00ff00' : '#ffcc00';
             measureCtx.font = 'bold 14px sans-serif';
             measureCtx.textAlign = 'center';
             measureCtx.textBaseline = 'middle';
-            measureCtx.fillText(`${prevDistMM} mm (プレビュー)`, midX, midY);
+            const snapLabel = currentPoint.isSnapped ? ' ★スナップ中' : '';
+            measureCtx.fillText(`${prevDistMM} mm${snapLabel}`, midX, midY);
             measureCtx.textAlign = 'left';
             measureCtx.textBaseline = 'alphabetic';
         }
