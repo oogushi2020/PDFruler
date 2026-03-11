@@ -46,7 +46,7 @@
             box-shadow: 0 0 20px rgba(0,0,0,0.3);
         }
         #pdf-canvas { position: absolute; top: 0; left: 0; }
-        #measure-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+        #measure-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none; }
 
         .info-panel {
             margin-top: auto;
@@ -101,7 +101,7 @@
         <div>測定結果:</div>
         <div class="result-value" id="measure-result">0 mm</div>
         <div style="font-size: 11px; margin-top: 5px; color: #666;">
-            ※角度スナップ有効（45度単位）
+            ※角度スナップ有効（15度単位） iPad対応
         </div>
     </div>
     
@@ -168,14 +168,14 @@
         drawAllMeasurements();
     }
 
-    // 角度スナップ：最も近い45度単位の角度にスナップ
+    // 角度スナップ：最も近い15度単位の角度にスナップ
     function snapToAngle(p1, p2) {
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
         let angle = Math.atan2(dy, dx) * 180 / Math.PI;
         
-        // 最も近い45度単位にスナップ
-        const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+        // 最も近い15度単位にスナップ
+        const snapAngles = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345];
         angle = (angle + 360) % 360;
         
         let closestAngle = snapAngles[0];
@@ -189,8 +189,8 @@
             }
         }
         
-        // 15度以内ならスナップ
-        if (minDiff < 15) {
+        // 7度以内ならスナップ
+        if (minDiff < 7) {
             const dist = Math.sqrt(dx*dx + dy*dy);
             const newAngle = closestAngle * Math.PI / 180;
             return {
@@ -201,15 +201,39 @@
         return p2;
     }
 
-    // マウスダウン：測定開始
-    measureCanvas.addEventListener('mousedown', (e) => {
+    // クライアント座標を取得（マウス、タッチ対応）
+    function getClientCoordinates(e) {
         const rect = measureCanvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+        let clientX, clientY;
+        
+        if (e.touches && e.touches.length > 0) {
+            // タッチいべんと（iOS、iPad）
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            // touchendではtouchesが空なのでchangedTouchesを使用
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        } else {
+            // マウスいべんと
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    }
+
+    // 掴作開始（マウス/タッチ両対応）
+    function handlePointerDown(e) {
+        e.preventDefault();
+        const coords = getClientCoordinates(e);
 
         // 既存の測定線をクリックしたか確認
         for (let i = 0; i < measurements.length; i++) {
-            if (isNearLine(mouseX, mouseY, measurements[i].p1, measurements[i].p2)) {
+            if (isNearLine(coords.x, coords.y, measurements[i].p1, measurements[i].p2)) {
                 editingIndex = i;
                 startPoint = measurements[i].p1;
                 isDrawing = true;
@@ -219,28 +243,33 @@
 
         // 新規測定開始
         editingIndex = -1;
-        startPoint = { x: mouseX, y: mouseY };
+        startPoint = { x: coords.x, y: coords.y };
         isDrawing = true;
-    });
+    }
 
-    // マウスムーブ：動的に線を更新
-    measureCanvas.addEventListener('mousemove', (e) => {
+    measureCanvas.addEventListener('mousedown', handlePointerDown);
+    measureCanvas.addEventListener('touchstart', handlePointerDown);
+
+    // ポインタ移動（マウス/タッチ両対応）
+    function handlePointerMove(e) {
         if (!isDrawing || !startPoint) return;
+        e.preventDefault();
 
-        const rect = measureCanvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        currentPoint = snapToAngle(startPoint, { x: mouseX, y: mouseY });
+        const coords = getClientCoordinates(e);
+        currentPoint = snapToAngle(startPoint, { x: coords.x, y: coords.y });
         drawAllMeasurements();
-    });
+    }
 
-    // マウスアップ：測定確定
-    measureCanvas.addEventListener('mouseup', (e) => {
+    measureCanvas.addEventListener('mousemove', handlePointerMove);
+    measureCanvas.addEventListener('touchmove', handlePointerMove);
+
+    // ポインタ拆離（マウス/タッチ両対応）
+    function handlePointerUp(e) {
         if (!isDrawing || !startPoint || !currentPoint) {
             isDrawing = false;
             return;
         }
+        e.preventDefault();
 
         if (editingIndex >= 0) {
             // 既存線を更新
@@ -259,7 +288,10 @@
         editingIndex = -1;
         
         drawAllMeasurements();
-    });
+    }
+
+    measureCanvas.addEventListener('mouseup', handlePointerUp);
+    measureCanvas.addEventListener('touchend', handlePointerUp);
 
     // 線の近くかどうか判定
     function isNearLine(x, y, p1, p2, threshold = 10) {
